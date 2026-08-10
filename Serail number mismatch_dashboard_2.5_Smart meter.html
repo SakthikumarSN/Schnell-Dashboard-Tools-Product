@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SLC Panel — Meter Mismatch Dashboard</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background:#f5f6f8; margin:0; padding:24px; color:#1a1a1a; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { font-size:12px; color:#8a94a6; margin-bottom:20px; }
+  .cards { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:28px; }
+  .card { flex:1; min-width:180px; background:#fff; border:1px solid #e3e6ea; border-radius:10px; padding:18px; text-align:center; }
+  .card .num { font-size:26px; font-weight:700; }
+  .card .lbl { font-size:11px; color:#8a94a6; text-transform:uppercase; margin-top:6px; letter-spacing:.03em; }
+  .card.total .num { color:#185FA5; }
+  .card.mismatch .num { color:#c0392b; }
+  table { border-collapse:collapse; width:100%; background:#fff; border-radius:8px; overflow:hidden; }
+  th { background:#185FA5; color:#fff; text-align:left; padding:9px 12px; font-size:11px; text-transform:uppercase; }
+  td { padding:8px 12px; border-bottom:1px solid #eee; font-size:13px; }
+  td.mono { font-family: Consolas, monospace; }
+  h2 { font-size:14px; margin-top:28px; color:#333; }
+  .empty { padding:16px; color:#8a94a6; font-size:13px; background:#fff; border-radius:8px; }
+  #status { font-size:13px; color:#555; margin:12px 0; white-space:pre-line; }
+  button { background:#185FA5; color:#fff; border:none; padding:10px 20px; border-radius:6px; font-size:13px; cursor:pointer; }
+  button:disabled { background:#a9b6c4; cursor:default; }
+</style>
+</head>
+<body>
+
+<h1>SLC Panel — Meter Serial Number Mismatch Dashboard <span style="font-size:12px;color:#8a94a6;font-weight:normal;">v2.5.0</span></h1>
+<div class="sub">Meter ID ranges:
+  <span style="background:#e8f0fe;color:#185FA5;font-weight:700;padding:3px 10px;border-radius:12px;margin:0 4px;">SALSS000001 – SALSS007800 = Bangalore (BBMP)</span>
+  <span style="background:#fff4e5;color:#c9700a;font-weight:700;padding:3px 10px;border-radius:12px;margin:0 4px;">SALSS007801 – SALSS013300 = 5B Innovations</span>
+</div>
+
+<div id="loginArea" style="background:#fff;border:1px solid #e3e6ea;border-radius:10px;padding:18px;max-width:420px;margin-bottom:16px;">
+  <div style="font-size:12px;color:#8a94a6;margin-bottom:10px;">Enter your ThingsBoard login (not saved anywhere)</div>
+  <input id="tbUser" type="text" placeholder="Username / email" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;box-sizing:border-box;">
+  <input id="tbPass" type="password" placeholder="Password" style="width:100%;padding:8px 10px;margin-bottom:14px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;box-sizing:border-box;">
+
+  <div style="border-top:1px solid #eef0f3;margin:0 0 14px;"></div>
+
+  <div style="font-size:12px;color:#8a94a6;margin-bottom:6px;">View <span style="color:#1D9E75;">(switches instantly — no reload needed)</span></div>
+  <div style="margin-bottom:16px;font-size:13px;">
+    <label style="margin-right:16px;cursor:pointer;"><input type="radio" name="stateFilter" value="INSTALLED" checked onchange="applyFilter()"> Installed</label>
+    <label style="cursor:pointer;"><input type="radio" name="stateFilter" value="INSTALLABLE" onchange="applyFilter()"> Installable</label>
+  </div>
+
+  <div style="border-top:1px solid #eef0f3;margin:0 0 14px;"></div>
+
+  <button id="loadBtn" onclick="loadData()">Load Data</button>
+  <div style="font-size:11px;color:#8a94a6;margin-top:6px;">Only click this to fetch fresh data from ThingsBoard</div>
+</div>
+<div id="status"></div>
+<div id="timer" style="font-size:12px;color:#185FA5;margin:4px 0 12px;"></div>
+
+<div class="cards" id="cards" style="display:none;"></div>
+
+<h2 id="mismatchHeading" style="display:none;"></h2>
+<div id="mismatchArea"></div>
+
+<script>
+const TB_BASE = 'https://schnelliot.in';
+
+const CUSTOMERS = [
+  { label: 'Bangalore (BBMP)', nameSearch: 'Bangalore', uidPrefix: 'SSC' },
+  { label: '5B Innovations',   nameSearch: '5B Innovations', uidPrefix: 'VSC' },
+];
+const ASSET_TYPE     = 'smslc';
+const DEVICE_TYPE     = 'semc';
+
+const STATE_KEY      = 'state';
+const INSTALLED_VAL  = 'INSTALLED';
+const INSTALLABLE_VAL = 'INSTALLABLE';
+const UID_KEY        = 'uid';
+const SERIAL_REGEX   = /SALSS(\d+)/i;
+const RULES = {
+  SSC: { type: 'range', min: 1,    max: 7800  },
+  VSC: { type: 'range', min: 7801, max: 13300 },
+};
+
+let JWT = '';
+let cachedAssets = null;
+let cachedDevices = null;
+let cachedAttrMap = null;
+
+const ESTIMATED_LOAD_SECONDS = 120; // rough estimate based on typical run times
+let timerInterval = null;
+let timerStartMs = null;
+
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return mm + ':' + ss;
+}
+
+function startTimer() {
+  timerStartMs = Date.now();
+  const timerEl = document.getElementById('timer');
+  timerInterval = setInterval(function() {
+    const elapsed = (Date.now() - timerStartMs) / 1000;
+    const remaining = ESTIMATED_LOAD_SECONDS - elapsed;
+    if (remaining > 0) {
+      timerEl.textContent = 'Estimated time remaining: ' + formatClock(remaining);
+    } else {
+      timerEl.textContent = 'Still working... elapsed: ' + formatClock(elapsed);
+    }
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  const timerEl = document.getElementById('timer');
+  if (timerStartMs) {
+    const elapsed = (Date.now() - timerStartMs) / 1000;
+    timerEl.textContent = 'Load completed in ' + formatClock(elapsed);
+  }
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function authHeaders() {
+  return { 'X-Authorization': 'Bearer ' + JWT };
+}
+
+async function login() {
+  const username = document.getElementById('tbUser').value.trim();
+  const password = document.getElementById('tbPass').value;
+  if (!username || !password) throw new Error('Please enter your ThingsBoard username and password.');
+  const res = await fetch(TB_BASE + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username, password: password }),
+  });
+  if (!res.ok) throw new Error('ThingsBoard login failed (' + res.status + ')');
+  const data = await res.json();
+  JWT = data.token;
+}
+
+async function findCustomerId(nameSearch) {
+  const res = await fetch(
+    TB_BASE + '/api/customers?pageSize=50&page=0&textSearch=' + encodeURIComponent(nameSearch),
+    { headers: authHeaders() }
+  );
+  const data = await res.json();
+  const found = (data.data || [])[0];
+  if (!found) throw new Error('Customer not found: ' + nameSearch);
+  return { id: found.id.id, title: found.title };
+}
+
+async function fetchAllTenantEntities(entityKind, entityType) {
+  // entityKind: 'assets' or 'devices'
+  let all = [];
+  let page = 0;
+  const pageSize = 100;
+  while (true) {
+    const res = await fetch(
+      TB_BASE + '/api/tenant/' + entityKind + '?type=' + encodeURIComponent(entityType) + '&pageSize=' + pageSize + '&page=' + page,
+      { headers: authHeaders() }
+    );
+    const data = await res.json();
+    const batch = data.data || [];
+    all = all.concat(batch);
+    setStatus('Fetching all tenant ' + entityType + ' ' + entityKind + '... ' + all.length + ' so far');
+    if (!data.hasNext || batch.length === 0) break;
+    page++;
+    if (page > 200) {
+      setStatus('WARNING: stopped after 200 pages as a safety limit.');
+      break;
+    }
+  }
+  return all;
+}
+
+async function batchFetchAttributes(entities, keys, entityType, batchSize) {
+  batchSize = batchSize || 20;
+  const results = {};
+  for (let i = 0; i < entities.length; i += batchSize) {
+    const batch = entities.slice(i, i + batchSize);
+    await Promise.all(batch.map(async function(ent) {
+      const id = ent.id.id;
+      try {
+        const res = await fetch(
+          TB_BASE + '/api/plugins/telemetry/' + entityType + '/' + id + '/values/attributes/SERVER_SCOPE?keys=' + keys.join(','),
+          { headers: authHeaders() }
+        );
+        const data = await res.json();
+        const attrs = {};
+        (data || []).forEach(function(a) { attrs[a.key] = a.value; });
+        results[id] = attrs;
+      } catch (e) { results[id] = {}; }
+    }));
+  }
+  return results;
+}
+
+async function getCountForState(cust, allTenantAssets, attrMap, stateVal) {
+  const customer = await findCustomerId(cust.nameSearch); // still needed for the mismatch "expected" check
+  const total = allTenantAssets.filter(function(a) {
+    const attrs = attrMap[a.id.id] || {};
+    if (attrs[STATE_KEY] !== stateVal) return false;
+    const uid = String(attrs[UID_KEY] || '').toUpperCase();
+    return uid.startsWith(cust.uidPrefix);
+  }).length;
+  return { id: customer.id, label: cust.label, total: total };
+}
+
+function checkRule(prefix, serialNum) {
+  const rule = RULES[prefix];
+  if (!rule || serialNum == null) return null;
+  if (rule.type === 'range') return serialNum >= rule.min && serialNum <= rule.max;
+  if (rule.type === 'max') return serialNum <= rule.value;
+  if (rule.type === 'min') return serialNum >= rule.value;
+  return null;
+}
+
+const UNASSIGNED_CUSTOMER_ID = '13814000-1dd2-11b2-8080-808080808080';
+function isAssignedToCustomer(customerId) {
+  return !!(customerId && customerId.id && customerId.id !== UNASSIGNED_CUSTOMER_ID);
+}
+
+async function fetchCustomerTitle(customerId) {
+  try {
+    const res = await fetch(TB_BASE + '/api/customer/' + customerId, { headers: authHeaders() });
+    if (!res.ok) return '(unknown customer)';
+    const data = await res.json();
+    return data.title || '(unnamed customer)';
+  } catch (e) {
+    return '(unknown customer)';
+  }
+}
+
+async function runMismatchCheck(allTenantDevices, customerInfo, stateFilter) {
+  // customerInfo: { SSC: {id, label, total}, VSC: {id, label, total} }
+  const serialMismatches = [];
+  const customerMismatches = [];
+  let checkedCount = 0, blankLabelCount = 0, unrecognizedFormatCount = 0;
+
+  const idToLabel = {};
+  Object.keys(customerInfo).forEach(function(prefix) {
+    idToLabel[customerInfo[prefix].id] = customerInfo[prefix].label;
+  });
+
+  // First pass: figure out which devices are relevant, and collect any
+  // "other" customer IDs we don't already have a name for.
+  const relevant = [];
+  const unknownIds = new Set();
+
+  allTenantDevices.forEach(function(d) {
+    const assigned = isAssignedToCustomer(d.customerId);
+    if (stateFilter === INSTALLED_VAL && !assigned) return;
+    if (stateFilter === INSTALLABLE_VAL && assigned) return;
+
+    const label = (d.label || '').toUpperCase();
+    if (!label) { blankLabelCount++; return; }
+
+    let truePrefix = null;
+    if (label.startsWith('SSC')) truePrefix = 'SSC';
+    else if (label.startsWith('VSC')) truePrefix = 'VSC';
+    if (!truePrefix) { unrecognizedFormatCount++; return; }
+
+    checkedCount++;
+    relevant.push({ d: d, truePrefix: truePrefix, assigned: assigned });
+
+    if (assigned && !idToLabel[d.customerId.id]) {
+      unknownIds.add(d.customerId.id);
+    }
+  });
+
+  // Resolve real names for any unknown customer IDs (batched)
+  const unknownIdList = Array.from(unknownIds);
+  const resolvedNames = {};
+  const batchSize = 15;
+  for (let i = 0; i < unknownIdList.length; i += batchSize) {
+    const batch = unknownIdList.slice(i, i + batchSize);
+    await Promise.all(batch.map(async function(id) {
+      resolvedNames[id] = await fetchCustomerTitle(id);
+    }));
+  }
+
+  relevant.forEach(function(item) {
+    const d = item.d, truePrefix = item.truePrefix, assigned = item.assigned;
+    const expected = customerInfo[truePrefix];
+    const expectedRangeText = truePrefix === 'SSC' ? 'SALSS000001–SALSS007800' : 'SALSS007801–SALSS013300';
+
+    const m = (d.name || '').match(SERIAL_REGEX);
+    const serialNum = m ? parseInt(m[1], 10) : null;
+    const wrongSerial = serialNum == null ? true : !checkRule(truePrefix, serialNum);
+
+    const wrongCustomer = assigned && d.customerId.id !== expected.id;
+    const currentLabel = !assigned ? '(not yet assigned)'
+      : (idToLabel[d.customerId.id] || resolvedNames[d.customerId.id] || '(unknown customer)');
+
+    if (wrongSerial) {
+      serialMismatches.push({
+        panelLabel: d.label,
+        meterId   : d.name,
+        expected  : expectedRangeText,
+        bothIssues: wrongCustomer,
+      });
+    }
+    if (wrongCustomer) {
+      customerMismatches.push({
+        panelLabel: d.label,
+        meterId   : d.name,
+        current   : currentLabel,
+        expected  : expected.label,
+        bothIssues: wrongSerial,
+      });
+    }
+  });
+
+  console.log('[Diagnostics] state=' + stateFilter + ' checked=' + checkedCount + ' blankLabel=' + blankLabelCount +
+              ' unrecognizedFormat=' + unrecognizedFormatCount +
+              ' serialMismatches=' + serialMismatches.length + ' customerMismatches=' + customerMismatches.length);
+
+  return {
+    serialMismatches: serialMismatches,
+    customerMismatches: customerMismatches,
+    diagnostics: { checkedCount: checkedCount, blankLabelCount: blankLabelCount, unrecognizedFormatCount: unrecognizedFormatCount },
+  };
+}
+
+async function loadData() {
+  const btn = document.getElementById('loadBtn');
+  btn.disabled = true;
+  document.getElementById('cards').style.display = 'none';
+  document.getElementById('mismatchHeading').style.display = 'none';
+  document.getElementById('mismatchArea').innerHTML = '';
+  startTimer();
+
+  try {
+    setStatus('Authenticating with ThingsBoard...');
+    await login();
+
+    cachedAssets = await fetchAllTenantEntities('assets', ASSET_TYPE);
+    cachedDevices = await fetchAllTenantEntities('devices', DEVICE_TYPE);
+
+    setStatus('Reading attributes for ' + cachedAssets.length + ' assets...');
+    cachedAttrMap = await batchFetchAttributes(cachedAssets, [STATE_KEY, UID_KEY], 'ASSET');
+
+    await applyFilter();
+    btn.textContent = 'Reload Data';
+  } catch (e) {
+    setStatus('ERROR: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    stopTimer();
+  }
+}
+
+async function applyFilter() {
+  if (!cachedAssets || !cachedDevices || !cachedAttrMap) {
+    setStatus('Click "Load Data" first — no data fetched yet.');
+    return;
+  }
+
+  const stateFilter = document.querySelector('input[name="stateFilter"]:checked').value; // INSTALLED or INSTALLABLE
+
+  setStatus('Calculating ' + stateFilter.toLowerCase() + ' totals...');
+  const customerInfo = {};
+  for (const c of CUSTOMERS) {
+    customerInfo[c.uidPrefix] = await getCountForState(c, cachedAssets, cachedAttrMap, stateFilter);
+  }
+
+  setStatus('Checking ' + cachedDevices.length + ' meters (' + stateFilter + ' view)...');
+  const result = await runMismatchCheck(cachedDevices, customerInfo, stateFilter);
+
+  renderResults(customerInfo, result.serialMismatches, result.customerMismatches, result.diagnostics, stateFilter);
+  setStatus('Done — loaded at ' + new Date().toLocaleTimeString('en-IN') +
+    '  |  Meters checked: ' + result.diagnostics.checkedCount +
+    '  |  Blank label: ' + result.diagnostics.blankLabelCount +
+    '  |  Unrecognized format: ' + result.diagnostics.unrecognizedFormatCount);
+}
+
+function renderResults(customerInfo, serialMismatches, customerMismatches, diagnostics, stateFilter) {
+  const cardsEl = document.getElementById('cards');
+  const stateLabel = stateFilter === 'INSTALLABLE' ? 'Installable' : 'Installed';
+  const totalMismatches = serialMismatches.length + customerMismatches.length;
+
+  let cardsHTML = '';
+  Object.keys(customerInfo).forEach(function(prefix) {
+    const info = customerInfo[prefix];
+    cardsHTML += '<div class="card total"><div class="num">' + info.total + '</div><div class="lbl">Total ' + stateLabel + ' — ' + info.label + '</div></div>';
+  });
+  cardsHTML += '<div class="card mismatch"><div class="num">' + serialMismatches.length + '</div><div class="lbl">Serial Number Mismatches</div></div>';
+  cardsHTML += '<div class="card mismatch"><div class="num">' + customerMismatches.length + '</div><div class="lbl">Wrong Customer Mismatches</div></div>';
+  cardsEl.innerHTML = cardsHTML;
+  cardsEl.style.display = 'flex';
+
+  const heading = document.getElementById('mismatchHeading');
+  heading.textContent = 'Mismatch Details (' + totalMismatches + ')';
+  heading.style.display = 'block';
+
+  const area = document.getElementById('mismatchArea');
+  let html = '';
+
+  html += '<h3 style="font-size:13px;color:#333;margin:20px 0 8px;">Serial Number Mismatches (' + serialMismatches.length + ')</h3>';
+  if (!serialMismatches.length) {
+    html += '<div class="empty">No serial number mismatches found.</div>';
+  } else {
+    const serialRows = serialMismatches.map(function(m) {
+      const badge = m.bothIssues ? ' <span style="background:#fdecea;color:#c0392b;font-size:10px;padding:2px 6px;border-radius:10px;">also wrong customer</span>' : '';
+      return '<tr><td class="mono">' + m.panelLabel + badge + '</td><td class="mono">' + m.meterId + '</td><td>' + m.expected + '</td></tr>';
+    }).join('');
+    html += '<table><tr><th>Panel Label</th><th>Meter Serial</th><th>Expected Range</th></tr>' + serialRows + '</table>';
+  }
+
+  html += '<h3 style="font-size:13px;color:#333;margin:20px 0 8px;">Installed With Wrong Customer (' + customerMismatches.length + ')</h3>';
+  if (!customerMismatches.length) {
+    html += '<div class="empty">No customer assignment mismatches found.</div>';
+  } else {
+    const custRows = customerMismatches.map(function(m) {
+      const badge = m.bothIssues ? ' <span style="background:#fdecea;color:#c0392b;font-size:10px;padding:2px 6px;border-radius:10px;">also wrong serial</span>' : '';
+      return '<tr><td class="mono">' + m.panelLabel + badge + '</td><td class="mono">' + m.meterId + '</td><td>' + m.current + '</td><td>' + m.expected + '</td></tr>';
+    }).join('');
+    html += '<table><tr><th>Panel Label</th><th>Meter Serial</th><th>Actual Customer Name</th><th>Expected Customer</th></tr>' + custRows + '</table>';
+  }
+
+  area.innerHTML = html;
+}
+</script>
+</body>
+</html>
