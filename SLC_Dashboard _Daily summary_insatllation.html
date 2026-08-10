@@ -1,0 +1,1717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- ============================================================
+     SLC Panel Installation Report
+     Version : 1.3.0
+     Released: 2026-05-26
+     Author  : Schnell Energy / IoT Team
+     Changes :
+       v2.6.0 - Assigned qty read from 'Customer name' attr on smslc ASSET entity
+              - Assigned Targets card embedded in metrics row (always visible)
+              - Click card to reveal Assigned vs Installed progress panel
+              - Reads server attribute key = Customer name for assigned qty
+              - Shows Assigned / Installed / Today / Pending with progress bar
+              - Color-coded: green >80%, amber >50%, red <50%
+       v1.3.0 - Split window: Left = Up to Yesterday, Right = Today Live
+              - Today panel auto-refreshes every 15 minutes
+              - Today chart in Green, Historical chart in Blue
+              - Live pulse indicator with last-updated timestamp
+       v1.2.0 - Customer change now clears previous data, charts and metrics
+              - Region/Zone/Ward dropdowns reset on customer change
+       v1.1.0 - Fixed zone/ward attribute keys to zoneName and wardName
+              - Bar chart: Date on X-axis, Qty on Y-axis, single blue color
+              - Bar chart: Horizontal dashed benchmark line at Qty = 50
+       v1.0.0 - Initial release
+     ============================================================ -->
+<title>SLC Panel Installation Report v2.6.0</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f4f5f7; --surface: #fff; --surface2: #f0f2f5;
+  --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+  --text: #1a1a2e; --text2: #555e6d; --text3: #8a94a6;
+  --blue: #185FA5; --blue-dark: #0C447C; --blue-bar: #378ADD;
+  --green: #1D9E75; --green-dark: #0F6E52; --green-bar: #2ECC9A;
+  --green-bg: #EAF3DE; --green-text: #27500A;
+  --red-bg: #FCEBEB; --red-text: #A32D2D;
+  --info-bg: #E6F1FB; --info-text: #0C447C;
+  --radius: 8px; --radius-lg: 12px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* ── LOGIN ── */
+#loginScreen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
+.login-card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); padding: 2.5rem 2rem; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+.login-logo { text-align: center; margin-bottom: 2rem; }
+.login-logo i { font-size: 42px; color: var(--blue); }
+.login-logo h1 { font-size: 18px; font-weight: 600; margin-top: 10px; }
+.login-logo p { font-size: 13px; color: var(--text2); margin-top: 4px; }
+.field { margin-bottom: 1.1rem; }
+.field label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.field input { width: 100%; padding: 9px 12px; font-size: 14px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--surface); color: var(--text); outline: none; transition: border-color 0.2s; }
+.field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(24,95,165,0.12); }
+.btn-login { width: 100%; padding: 10px; font-size: 14px; font-weight: 600; border-radius: var(--radius); border: none; background: var(--blue); color: #fff; cursor: pointer; margin-top: 0.5rem; }
+.btn-login:hover { background: var(--blue-dark); }
+.btn-login:disabled { background: #aaa; cursor: not-allowed; }
+.login-footer { text-align: center; font-size: 11px; color: var(--text3); margin-top: 1.5rem; }
+
+/* ── TOPNAV ── */
+#dashScreen { display: none; min-height: 100vh; }
+.topnav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; height: 56px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.topnav-title { font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; gap: 8px; }
+.topnav-title i { color: var(--blue); font-size: 20px; }
+.pill { font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border); color: var(--text2); background: var(--surface2); white-space: nowrap; }
+.pill-green { background: var(--green-bg); color: var(--green-text); border-color: #C0DD97; }
+.nav-user { font-size: 12px; color: var(--text2); }
+.btn-nav { padding: 5px 12px; font-size: 12px; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--surface); color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.btn-nav:hover { background: var(--surface2); }
+.content { padding: 1.5rem; max-width: 1600px; margin: 0 auto; }
+
+/* ── FILTER PANEL ── */
+.filter-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+.filter-panel-title { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 1rem; display: flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 1rem; }
+.fgroup { display: flex; flex-direction: column; gap: 5px; }
+.fgroup label { font-size: 12px; font-weight: 500; color: var(--text2); }
+.fgroup select { font-size: 13px; padding: 7px 10px; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--surface); color: var(--text); outline: none; cursor: pointer; width: 100%; }
+.fgroup select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(24,95,165,0.1); }
+.filter-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn-primary { padding: 8px 20px; font-size: 13px; font-weight: 600; border-radius: var(--radius); border: none; background: var(--blue); color: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.btn-primary:hover { background: var(--blue-dark); }
+.btn-primary:disabled { background: #aaa; cursor: not-allowed; }
+.btn-secondary { padding: 8px 16px; font-size: 13px; font-weight: 500; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--surface); color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.btn-secondary:hover { background: var(--surface2); }
+.filter-hint { font-size: 12px; color: var(--text3); margin-left: auto; }
+
+/* ── STATUS ── */
+.status { padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 1rem; display: none; }
+.status-info    { background: var(--info-bg);  color: var(--info-text);  border: 1px solid #B5D4F4; }
+.status-error   { background: var(--red-bg);   color: var(--red-text);   border: 1px solid #F7C1C1; }
+.status-success { background: var(--green-bg); color: var(--green-text); border: 1px solid #C0DD97; }
+.progress-bar { height: 4px; background: var(--surface2); border-radius: 2px; margin-bottom: 1rem; overflow: hidden; display: none; }
+.progress-fill { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.4s; }
+.spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(24,95,165,0.2); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── METRICS ── */
+.metrics { display: none; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 1.25rem; }
+.metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1rem 1.25rem; display: flex; flex-direction: column; }
+.metric-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.metric-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; }
+.metric-value.sm { font-size: 13px; font-weight: 500; line-height: 1.5; }
+
+/* ── RESULT TOOLBAR ── */
+.result-toolbar { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.85rem 1.25rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; gap: 10px; }
+.result-group { display: flex; align-items: center; gap: 6px; }
+.result-group label { font-size: 12px; font-weight: 500; color: var(--text2); white-space: nowrap; }
+.result-group select { font-size: 13px; padding: 5px 10px; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--surface); color: var(--text); outline: none; cursor: pointer; }
+.result-right { margin-left: auto; display: flex; gap: 8px; }
+.btn-export { padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--surface); color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.btn-export:hover { background: var(--surface2); }
+
+/* ── TABS ── */
+.tabs { display: none; border-bottom: 2px solid var(--border); margin-bottom: 1rem; }
+.tab { padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; color: var(--text2); background: none; border-top: none; border-left: none; border-right: none; display: inline-flex; align-items: center; gap: 6px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* ── TABLE ── */
+.table-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: var(--surface2); color: var(--text2); font-weight: 600; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; font-size: 12px; }
+th.num, td.num { text-align: right; }
+td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: #f8f9fb; }
+.total-row td { font-weight: 600; background: var(--surface2); border-top: 2px solid var(--border2); }
+
+/* ── SPLIT WINDOW ── */
+.split-window { display: none; gap: 16px; margin-bottom: 1.5rem; }
+.split-window.visible { display: grid; grid-template-columns: 1fr 1fr; }
+.panel-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.panel-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.panel-header-title { font-size: 13px; font-weight: 600; flex: 1; display: flex; align-items: center; gap: 7px; }
+.panel-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dot-blue  { background: var(--blue-bar); }
+.dot-green { background: var(--green-bar); }
+.panel-badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
+.badge-blue  { background: #E6F1FB; color: var(--blue); border: 1px solid #B5D4F4; }
+.badge-green { background: #E0F7F0; color: var(--green-dark); border: 1px solid #A3E4CE; }
+.live-indicator { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } }
+.panel-body { padding: 14px 16px; }
+.panel-stat { display: flex; align-items: baseline; gap: 6px; margin-bottom: 12px; }
+.panel-stat-num { font-size: 32px; font-weight: 700; line-height: 1; }
+.stat-blue  { color: var(--blue); }
+.stat-green { color: var(--green); }
+.panel-stat-label { font-size: 13px; color: var(--text2); }
+.chart-wrap { position: relative; width: 100%; height: 260px; }
+.last-updated { font-size: 11px; color: var(--text3); margin-top: 8px; text-align: right; }
+.refresh-countdown { font-size: 11px; color: var(--text3); }
+.countdown-bar-wrap { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.countdown-bar { height: 100%; background: var(--green); border-radius: 2px; transition: width 1s linear; }
+
+/* ── CHART LEGEND ── */
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--text2); }
+.chart-legend span { display: flex; align-items: center; gap: 5px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── TARGET PANEL ── */
+.target-panel { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+.target-panel.visible { display: block; }
+.target-panel-title { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
+.target-title-left { display: flex; align-items: center; gap: 8px; }
+.target-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.target-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
+.target-card-inner { display: flex; gap: 16px; align-items: center; }
+.target-donut-wrap { flex-shrink: 0; position: relative; width: 110px; height: 110px; }
+.target-donut-wrap canvas { width: 110px !important; height: 110px !important; }
+.donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; pointer-events: none; }
+.donut-pct { font-size: 18px; font-weight: 700; line-height: 1; }
+.donut-lbl { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+.target-details { flex: 1; min-width: 0; }
+.target-card-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.target-card-name i { color: var(--blue); font-size: 14px; }
+.target-numbers { display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
+.target-num { text-align: center; }
+.target-num-val { font-size: 20px; font-weight: 700; line-height: 1; }
+.target-num-lbl { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+.val-assigned { color: var(--text2); }
+.val-installed { color: var(--blue); }
+.val-today { color: var(--green); }
+.val-pending { color: #D85A30; }
+.progress-wrap { margin-top: 6px; }
+.progress-lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+.prog-bar { height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+.prog-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.prog-good { background: linear-gradient(90deg, #1D9E75, #2ECC9A); }
+.prog-mid  { background: linear-gradient(90deg, #BA7517, #F0A830); }
+.prog-low  { background: linear-gradient(90deg, #A32D2D, #E24B4A); }
+.toggle-target-btn { padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--surface); color: var(--blue); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.toggle-target-btn:hover { background: var(--info-bg); }
+.toggle-target-btn.active { background: var(--info-bg); border-color: var(--blue); }
+
+@media (max-width: 900px) {
+  .split-window.visible { grid-template-columns: 1fr; }
+  .content { padding: 1rem; }
+  .topnav { padding: 0 1rem; }
+  .nav-user { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <i class="ti ti-layout-grid"></i>
+      <h1>SLC Panel Installation Report</h1>
+      <p>schnelliot.in &nbsp;·&nbsp; SEMC Profile &nbsp;·&nbsp; State: INSTALLED</p>
+    </div>
+    <div id="loginStatus" class="status status-error"></div>
+    <div class="field">
+      <label>Username (Email)</label>
+      <input type="email" id="username" placeholder="your@email.com" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter') doLogin()" />
+    </div>
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">
+      <i class="ti ti-login"></i> Sign In
+    </button>
+    <div class="login-footer">Powered by ThingsBoard &nbsp;·&nbsp; Schnell IoT &nbsp;·&nbsp; <strong>v2.6.0</strong></div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashScreen">
+  <nav class="topnav">
+    <div class="topnav-title">
+      <i class="ti ti-layout-grid"></i> SLC Panel Installation Report
+    </div>
+    <span class="pill">SEMC</span>
+    <span class="pill pill-green"><i class="ti ti-check" style="font-size:11px;"></i> INSTALLED</span>
+    <span class="pill" style="font-size:10px; color:#888;">v2.6.0</span>
+    <span class="nav-user" id="navUser"></span>
+    <button class="btn-nav" onclick="doLogout()"><i class="ti ti-logout"></i> Logout</button>
+  </nav>
+
+  <div class="content">
+
+    <!-- FILTER PANEL -->
+    <div class="filter-panel" id="filterPanel">
+      <div class="filter-panel-title"><i class="ti ti-filter"></i> Select Filters to Load Data</div>
+      <div class="filter-grid">
+        <div class="fgroup">
+          <label>Customer</label>
+          <select id="fCustomer" onchange="onCustomerChange()">
+            <option value="">-- Loading... --</option>
+          </select>
+        </div>
+        <div class="fgroup">
+          <label>Region</label>
+          <select id="fRegion" onchange="onRegionChange()">
+            <option value="ALL">All Regions</option>
+          </select>
+        </div>
+        <div class="fgroup">
+          <label>Zone</label>
+          <select id="fZone" onchange="onZoneChange()">
+            <option value="ALL">All Zones</option>
+          </select>
+        </div>
+        <div class="fgroup">
+          <label>Ward</label>
+          <select id="fWard">
+            <option value="ALL">All Wards</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-primary" id="btnLoad" onclick="loadFilteredData()">
+          <i class="ti ti-search"></i> Load Data
+        </button>
+        <button class="btn-secondary" onclick="resetAll()">
+          <i class="ti ti-rotate"></i> Reset
+        </button>
+        <span class="filter-hint" id="filterHint">Select a customer to begin</span>
+      </div>
+    </div>
+
+    <!-- STATUS + PROGRESS -->
+    <div id="statusMsg" class="status"></div>
+    <div id="progressWrap" class="progress-bar">
+      <div class="progress-fill" id="progressFill" style="width:0%"></div>
+    </div>
+
+    <!-- METRICS -->
+    <div id="metricsRow" class="metrics">
+      <div class="metric"><div class="metric-label">Total Installed</div><div class="metric-value" id="mTotal">—</div></div>
+      <div class="metric"><div class="metric-label">Today</div><div class="metric-value stat-green" id="mToday">—</div></div>
+      <div class="metric"><div class="metric-label">Up to Yesterday</div><div class="metric-value stat-blue" id="mYesterday">—</div></div>
+      <div class="metric"><div class="metric-label">Regions</div><div class="metric-value" id="mRegions">—</div></div>
+      <div class="metric"><div class="metric-label">Zones</div><div class="metric-value" id="mZones">—</div></div>
+      <div class="metric"><div class="metric-label">Wards</div><div class="metric-value" id="mWards">—</div></div>
+      <div class="metric"><div class="metric-label">First Install</div><div class="metric-value sm" id="mFirst">—</div></div>
+      <div class="metric"><div class="metric-label">Latest Install</div><div class="metric-value sm" id="mLast">—</div></div>
+      <!-- ASSIGNED TARGETS TOGGLE — lives inside metrics row, always visible when data loads -->
+      <div class="metric" id="targetToggleRow" style="display:flex; align-items:center; justify-content:center; border: 1.5px dashed var(--blue); background: var(--info-bg); cursor:pointer;" onclick="toggleTargetPanel()">
+        <div style="text-align:center;">
+          <i class="ti ti-target" style="font-size:24px; color:var(--blue); display:block; margin-bottom:6px;"></i>
+          <div class="metric-label" style="color:var(--blue);">Assigned Targets</div>
+          <div id="toggleTargetBtn" style="font-size:11px; color:var(--blue); font-weight:600; margin-top:4px;">▶ Click to Show</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TARGET PANEL (hidden by default) -->
+    <div class="target-panel" id="targetPanel">
+      <div class="target-panel-title">
+        <div class="target-title-left">
+          <i class="ti ti-target" style="color:var(--blue);font-size:16px;"></i>
+          Assigned vs Installed — Customer Targets
+        </div>
+        <span style="font-size:11px;color:var(--text3);">Key: <code>Customer name</code> server attribute</span>
+      </div>
+      <div class="target-grid" id="targetGrid">
+        <div style="color:var(--text3);font-size:13px;padding:1rem;">Loading targets...</div>
+      </div>
+    </div>
+
+    <!-- SPLIT WINDOW: Historical | Today Live -->
+    <div class="split-window" id="splitWindow">
+
+      <!-- LEFT: Up to Yesterday -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-header-title">
+            <span class="panel-dot dot-blue"></span>
+            Historical — Up to Yesterday
+          </div>
+          <span class="panel-badge badge-blue" id="histCount">0 panels</span>
+        </div>
+        <div class="panel-body">
+          <div class="chart-legend" id="histLegend"></div>
+          <div class="chart-wrap">
+            <canvas id="histChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Today Live -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-header-title">
+            <span class="panel-dot dot-green"></span>
+            Today — Live
+          </div>
+          <span class="panel-badge badge-green" id="todayCount">0 panels</span>
+          <div class="live-indicator">
+            <span class="live-dot"></span> LIVE
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="panel-stat" style="cursor:pointer;" onclick="toggleTodayUIDs()" title="Click to see today's UIDs">
+            <span class="panel-stat-num stat-green" id="todayBigNum">0</span>
+            <span class="panel-stat-label">panels installed today &nbsp;<span style="font-size:11px;color:var(--color-text-tertiary);">▼ click for UIDs</span></span>
+          </div>
+          <div id="todayUIDsPanel" style="display:none;margin-bottom:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Today's Installed UIDs</div>
+            <div id="todayUIDsList" style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 12px;max-height:180px;overflow-y:auto;font-size:12px;font-family:monospace;line-height:1.8;color:var(--color-text-primary);"></div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="todayChart"></canvas>
+          </div>
+          <div class="last-updated">
+            Last updated: <span id="lastUpdatedTime">—</span>
+            &nbsp;·&nbsp;
+            <span class="refresh-countdown">Next refresh in <span id="countdown">15:00</span></span>
+          </div>
+          <div class="countdown-bar-wrap">
+            <div class="countdown-bar" id="countdownBar" style="width:100%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULT TOOLBAR + TABS (for table view) -->
+    <div class="result-toolbar" id="resultToolbar">
+      <div class="result-group">
+        <label>Group By</label>
+        <select id="groupBy" onchange="applyView()">
+          <option value="date">Date</option>
+          <option value="region">Region</option>
+          <option value="zone">Zone</option>
+          <option value="ward">Ward</option>
+          <option value="rzw">Region - Zone - Ward</option>
+        </select>
+      </div>
+      <div class="result-right">
+        <button class="btn-export" onclick="exportCSV()"><i class="ti ti-file-spreadsheet"></i> Export CSV</button>
+        <button class="btn-export" onclick="window.print()"><i class="ti ti-printer"></i> Print</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="mainTabs">
+      <button class="tab active" onclick="switchTab('summary',this)"><i class="ti ti-layout-grid"></i> Summary</button>
+      <button class="tab" onclick="switchTab('table',this)"><i class="ti ti-table"></i> Table</button>
+      <button class="tab" onclick="switchTab('trend',this)"><i class="ti ti-chart-line"></i> Trend Chart</button>
+    </div>
+
+    <div id="tabSummary" style="display:block;"></div>
+
+    <div id="tabTable" style="display:none;">
+      <div class="table-card">
+        <table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+      </div>
+    </div>
+    <div id="tabTrend" style="display:none;">
+      <div class="panel-card">
+        <div class="panel-body">
+          <div class="chart-legend" id="trendLegend"></div>
+          <div class="chart-wrap" style="height:320px;"><canvas id="trendChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   SLC Panel Installation Report — JavaScript
+   Version : 1.3.0  |  Released: 2026-05-26
+   ============================================================
+   CHANGELOG
+   ---------
+   v2.3.0 (2026-05-26)
+     - Split window: Left = Historical (up to yesterday), Right = Today Live
+     - Today panel auto-refreshes every 15 minutes (countdown bar shown)
+     - Today chart: green bars, total count for today
+     - Historical chart: blue bars, date on X-axis, qty on Y-axis
+     - Both panels share same Customer/Region/Zone/Ward filters
+     - Live pulse indicator and last-updated timestamp
+   v1.2.0 (2026-05-25)
+     - Customer change now clears previous data, charts and metrics
+   v1.1.0 (2026-05-25)
+     - Fixed zone/ward attribute keys to zoneName and wardName
+     - Bar chart: Date X-axis, Qty Y-axis, single blue color, benchmark at 50
+   v1.0.0 (2026-05-25)
+     - Initial release
+   ============================================================ */
+
+var APP_VERSION  = '2.6.0';
+var APP_DATE     = '2026-05-26';
+var BASE         = 'https://schnelliot.in';
+var REFRESH_SECS = 900;   // 15 minutes
+
+var jwtToken     = '';
+var rawData          = [];
+var assignedTotal    = 0;
+var customerTargetData = []; // stores per-customer target results
+var histChartInst  = null;
+var todayChartInst = null;
+var trendInst      = null;
+var refreshTimer   = null;
+var countdownTimer = null;
+var countdownLeft  = REFRESH_SECS;
+var customersMap   = {};
+var filterMeta     = {};
+
+/* ── today's date string YYYY-MM-DD ── */
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/* ============================================================ AUTH */
+function doLogin() {
+  var u = document.getElementById('username').value.trim();
+  var p = document.getElementById('password').value.trim();
+  if (!u || !p) { showLoginErr('Please enter username and password.'); return; }
+  var btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Signing in...';
+  document.getElementById('loginStatus').style.display = 'none';
+  fetch(BASE + '/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: u, password: p })
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Invalid username or password.');
+    return r.json();
+  })
+  .then(function(data) {
+    jwtToken = data.token;
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('dashScreen').style.display = 'block';
+    document.getElementById('navUser').textContent = u;
+    loadCustomers();
+  })
+  .catch(function(err) {
+    showLoginErr(err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-login"></i> Sign In';
+  });
+}
+
+function showLoginErr(msg) {
+  var el = document.getElementById('loginStatus');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function doLogout() {
+  clearTimers();
+  jwtToken = ''; rawData = []; customersMap = {}; filterMeta = {};
+  destroyCharts();
+  document.getElementById('dashScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginStatus').style.display = 'none';
+  document.getElementById('password').value = '';
+  document.getElementById('loginBtn').disabled = false;
+  document.getElementById('loginBtn').innerHTML = '<i class="ti ti-login"></i> Sign In';
+  hideResults();
+}
+
+function destroyCharts() {
+  if (histChartInst)  { histChartInst.destroy();  histChartInst  = null; }
+  if (todayChartInst) { todayChartInst.destroy(); todayChartInst = null; }
+  if (trendInst)      { trendInst.destroy();      trendInst      = null; }
+}
+
+function clearTimers() {
+  if (refreshTimer)   { clearInterval(refreshTimer);  refreshTimer   = null; }
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+}
+
+/* ============================================================ API */
+function apiGet(path) {
+  return fetch(BASE + path, { headers: { 'X-Authorization': 'Bearer ' + jwtToken } })
+  .then(function(r) {
+    if (r.status === 401) { doLogout(); throw new Error('Session expired. Please log in again.'); }
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' on ' + path);
+    return r.json();
+  });
+}
+
+/* ============================================================ STATUS */
+function showStatus(msg, type) {
+  var el = document.getElementById('statusMsg');
+  el.className = 'status status-' + (type || 'info');
+  el.innerHTML = msg; el.style.display = 'block';
+}
+function hideStatus() { document.getElementById('statusMsg').style.display = 'none'; }
+function setProgress(p) {
+  document.getElementById('progressWrap').style.display = (p >= 100) ? 'none' : 'block';
+  document.getElementById('progressFill').style.width = p + '%';
+}
+
+/* ============================================================ CUSTOMERS */
+/* Allowed customers — only these two are shown in the dropdown */
+var ALLOWED_CUSTOMERS = ['bangalore (bbmp)', '5b innovations'];
+
+function loadCustomers() {
+  document.getElementById('fCustomer').innerHTML = '<option value="">-- Loading customers... --</option>';
+  apiGet('/api/customers?pageSize=100&page=0')
+  .then(function(res) {
+    var sel = document.getElementById('fCustomer');
+    sel.innerHTML = '<option value="ALL">All Customers</option>';
+    customersMap = {};
+    if (res.data) {
+      res.data.forEach(function(c) {
+        // Only show Bangalore (BBMP) and 5B Innovations
+        var titleLower = c.title.toLowerCase().trim();
+        var allowed = false;
+        ALLOWED_CUSTOMERS.forEach(function(a) {
+          if (titleLower.indexOf(a) !== -1 || a.indexOf(titleLower) !== -1) allowed = true;
+        });
+        if (!allowed) return;  // skip all other customers
+        customersMap[c.id.id] = c.title;
+        sel.innerHTML += '<option value="' + c.id.id + '">' + c.title + '</option>';
+      });
+    }
+    document.getElementById('filterHint').textContent = 'Select customer and filters, then click Load Data';
+  })
+  .catch(function() {
+    document.getElementById('fCustomer').innerHTML = '<option value="ALL">All Customers</option>';
+  });
+}
+
+/* ============================================================ CUSTOMER CHANGE — clears previous data */
+function onCustomerChange() {
+  // Clear all previous results when customer changes
+  rawData = [];
+  assignedTotal    = 0;
+  customerTargetData = [];
+  clearTimers();
+  destroyCharts();
+  hideResults();
+  hideStatus();
+
+  document.getElementById('fRegion').innerHTML = '<option value="ALL">All Regions</option>';
+  document.getElementById('fZone').innerHTML   = '<option value="ALL">All Zones</option>';
+  document.getElementById('fWard').innerHTML   = '<option value="ALL">All Wards</option>';
+  filterMeta = {};
+
+  var custId = document.getElementById('fCustomer').value;
+  if (!custId || custId === 'ALL') {
+    document.getElementById('filterHint').textContent = 'Click Load Data to fetch all installed panels';
+    return;
+  }
+  document.getElementById('filterHint').textContent = 'Loading filters for selected customer...';
+
+  apiGet('/api/customer/' + custId + '/devices?pageSize=200&page=0')
+  .then(function(res) {
+    var devices = res.data || [];
+    if (!devices.length) { document.getElementById('filterHint').textContent = 'No devices found.'; return; }
+    var sample = devices.slice(0, 50);
+    return Promise.all(sample.map(function(dev) {
+      return apiGet('/api/plugins/telemetry/DEVICE/' + dev.id.id + '/values/attributes/SERVER_SCOPE')
+      .then(function(attrs) {
+        var m = {};
+        if (Array.isArray(attrs)) attrs.forEach(function(a) { m[a.key] = a.value; });
+        return m;
+      }).catch(function() { return {}; });
+    }));
+  })
+  .then(function(list) {
+    if (!list) return;
+    list.forEach(function(m) {
+      var r = m['region']   || m['Region']   || '';
+      var z = m['zoneName'] || m['zone']     || m['Zone'] || '';
+      var w = m['wardName'] || m['ward']     || m['Ward'] || '';
+      if (!r) return;
+      if (!filterMeta[r]) filterMeta[r] = {};
+      if (z) { if (!filterMeta[r][z]) filterMeta[r][z] = {}; if (w) filterMeta[r][z][w] = 1; }
+    });
+    populateRegionDropdown();
+    document.getElementById('filterHint').textContent = 'Filters ready. Click Load Data.';
+  })
+  .catch(function(err) {
+    document.getElementById('filterHint').textContent = 'Error: ' + err.message;
+  });
+}
+
+function populateRegionDropdown() {
+  var sel = document.getElementById('fRegion');
+  sel.innerHTML = '<option value="ALL">All Regions</option>';
+  Object.keys(filterMeta).sort().forEach(function(r) {
+    sel.innerHTML += '<option value="' + r + '">' + r + '</option>';
+  });
+  document.getElementById('fZone').innerHTML = '<option value="ALL">All Zones</option>';
+  document.getElementById('fWard').innerHTML = '<option value="ALL">All Wards</option>';
+}
+
+function onRegionChange() {
+  var r = document.getElementById('fRegion').value;
+  document.getElementById('fZone').innerHTML = '<option value="ALL">All Zones</option>';
+  document.getElementById('fWard').innerHTML = '<option value="ALL">All Wards</option>';
+  if (r === 'ALL' || !filterMeta[r]) return;
+  Object.keys(filterMeta[r]).sort().forEach(function(z) {
+    document.getElementById('fZone').innerHTML += '<option value="' + z + '">' + z + '</option>';
+  });
+}
+
+function onZoneChange() {
+  var r = document.getElementById('fRegion').value;
+  var z = document.getElementById('fZone').value;
+  document.getElementById('fWard').innerHTML = '<option value="ALL">All Wards</option>';
+  if (r === 'ALL' || z === 'ALL' || !filterMeta[r] || !filterMeta[r][z]) return;
+  Object.keys(filterMeta[r][z]).sort().forEach(function(w) {
+    document.getElementById('fWard').innerHTML += '<option value="' + w + '">' + w + '</option>';
+  });
+}
+
+/* ============================================================ LOAD DATA */
+function loadFilteredData() {
+  var custId = document.getElementById('fCustomer').value;
+  var region = document.getElementById('fRegion').value;
+  var zone   = document.getElementById('fZone').value;
+  var ward   = document.getElementById('fWard').value;
+
+  clearTimers();
+  destroyCharts();
+  hideResults();
+  showStatus('<span class="spinner"></span> Fetching SEMC devices...', 'info');
+  setProgress(5);
+  document.getElementById('btnLoad').disabled = true;
+  rawData = [];
+  assignedTotal    = 0;
+  customerTargetData = [];
+
+  if (custId && custId !== 'ALL') {
+    // Single customer — simple direct fetch
+    var url = '/api/customer/' + custId + '/devices?pageSize=100&page=0&type=semc';
+    var cName = customersMap[custId] || '';
+    fetchPages(url, custId, 0, [], region, zone, ward, cName);
+  } else {
+    // All customers — fetch each customer in parallel, tag with customer name
+    var custIds = Object.keys(customersMap);
+    if (!custIds.length) {
+      showStatus('No customers found.', 'error');
+      document.getElementById('btnLoad').disabled = false;
+      return;
+    }
+    var allCollected = [];
+    var done = 0;
+    custIds.forEach(function(cId) {
+      var cName = customersMap[cId] || cId;
+      var cUrl  = '/api/customer/' + cId + '/devices?pageSize=100&page=0&type=semc';
+      fetchPagesTagged(cUrl, 0, [], cName, function(devices) {
+        allCollected = allCollected.concat(devices);
+        done++;
+        if (done === custIds.length) {
+          showStatus('<span class="spinner"></span> Found ' + allCollected.length + ' devices. Reading attributes...', 'info');
+          setProgress(20);
+          processDevices(allCollected, region, zone, ward, 'MULTI');
+        }
+      });
+    });
+  }
+}
+
+function fetchPagesTagged(baseUrl, page, collected, custName, onDone) {
+  var url = baseUrl.replace('page=0', 'page=' + page);
+  apiGet(url).then(function(res) {
+    if (res.data) res.data.forEach(function(d) { d._custName = custName; collected.push(d); });
+    if (res.hasNext && page < 300) {
+      fetchPagesTagged(baseUrl, page + 1, collected, custName, onDone);
+    } else {
+      onDone(collected);
+    }
+  }).catch(function() { onDone(collected); });
+}
+
+function fetchPages(baseUrl, custId, page, collected, region, zone, ward, custName) {
+  var url = baseUrl.replace(/page=\d+/, 'page=' + page);
+  apiGet(url)
+  .then(function(res) {
+    if (res.data) res.data.forEach(function(d) { collected.push(d); });
+    setProgress(5 + Math.min(page * 3, 15));
+    if (res.hasNext && page < 300) {
+      fetchPages(baseUrl, custId, page + 1, collected, region, zone, ward, custName);
+    } else {
+      if (collected.length === 0 && url.indexOf('type=semc') !== -1) {
+        var fb = (custId && custId !== 'ALL')
+          ? '/api/customer/' + custId + '/devices?pageSize=100&page=0'
+          : '/api/tenant/devices?pageSize=100&page=0';
+        fetchPages(fb, custId, 0, [], region, zone, ward, custName);
+        return;
+      }
+      showStatus('<span class="spinner"></span> Found ' + collected.length + ' devices. Reading attributes...', 'info');
+      setProgress(20);
+      processDevices(collected, region, zone, ward, custName);
+    }
+  })
+  .catch(function(err) {
+    setProgress(100);
+    showStatus('Error: ' + err.message, 'error');
+    document.getElementById('btnLoad').disabled = false;
+  });
+}
+
+function processDevices(allDevices, filterRegion, filterZone, filterWard, custName) {
+  // custName='MULTI' means each device has _custName pre-tagged
+  var parsed = [];
+  var total = allDevices.length;
+  var completed = 0;
+  var batches = [];
+  for (var i = 0; i < total; i += 20) batches.push(allDevices.slice(i, i + 20));
+
+  function processBatch(idx) {
+    if (idx >= batches.length) {
+      setProgress(100);
+      document.getElementById('btnLoad').disabled = false;
+      rawData = parsed;
+      if (!rawData.length) {
+        showStatus('No devices found with state = INSTALLED for the selected filters.', 'error');
+        return;
+      }
+      showStatus('Loaded ' + rawData.length + ' installed panels.', 'success');
+      setTimeout(hideStatus, 5000);
+      renderAll();
+      startRefreshCycle();
+      return;
+    }
+    Promise.all(batches[idx].map(function(dev) {
+      return apiGet('/api/plugins/telemetry/DEVICE/' + dev.id.id + '/values/attributes/SERVER_SCOPE')
+      .then(function(attrs) {
+        var m = {};
+        if (Array.isArray(attrs)) attrs.forEach(function(a) { m[a.key] = a.value; });
+
+        var state = (m['state'] || '').toString().toUpperCase().trim();
+        if (state !== 'INSTALLED') return;
+
+        var region = m['region']   || m['Region']   || 'Unknown';
+        var zoneRaw = m['zoneName'] || m['zone'] || m['Zone'] || '';
+        var zone   = (zoneRaw && zoneRaw.toString().trim()) ? zoneRaw.toString().trim() : 'Unknown';
+        var ward   = m['wardName'] || m['ward']     || m['Ward'] || 'Unknown';
+
+        if (filterRegion !== 'ALL' && region !== filterRegion) return;
+        if (filterZone   !== 'ALL' && zone   !== filterZone)   return;
+        if (filterWard   !== 'ALL' && ward   !== filterWard)   return;
+
+        var ts = m['installedOn'];
+        var dateStr = 'Unknown';
+        if (ts !== undefined && ts !== null && ts !== '') {
+          var n = Number(ts);
+          dateStr = isNaN(n) ? String(ts).slice(0, 10) : new Date(n).toISOString().slice(0, 10);
+        }
+        var uid = (m['uid'] || dev.name || '').toString().toUpperCase();
+        // Use pre-tagged customer name from parallel fetch, or custName param
+        var deviceCust = dev._custName || custName || 'ALL';
+        parsed.push({ name: dev.name, uid: uid, custName: deviceCust, date: dateStr, region: region, zone: zone, ward: ward });
+      }).catch(function() {});
+    })).then(function() {
+      completed += batches[idx].length;
+      setProgress(20 + Math.round((completed / total) * 72));
+      showStatus('<span class="spinner"></span> Processing ' + completed + ' / ' + total + ' — <strong>' + parsed.length + ' installed</strong>', 'info');
+      processBatch(idx + 1);
+    });
+  }
+  processBatch(0);
+}
+
+/* ============================================================ RENDER ALL */
+function renderAll() {
+  var today = todayStr();
+  var histData  = rawData.filter(function(d) { return d.date < today; });
+  var todayData = rawData.filter(function(d) { return d.date === today; });
+
+  updateMetrics(histData, todayData);
+  renderHistChart(histData);
+  renderTodayChart(todayData);
+  applyView();
+
+  document.getElementById('metricsRow').style.display   = 'grid';
+  document.getElementById('splitWindow').classList.add('visible');
+  // Always render summary tab after data loads
+  renderSummaryTab();
+  document.getElementById('resultToolbar').style.display = 'flex';
+  document.getElementById('mainTabs').style.display      = 'block';
+}
+
+/* ============================================================ METRICS */
+function updateMetrics(histData, todayData) {
+  var regions = {}, zones = {}, wards = {}, dates = [];
+  rawData.forEach(function(d) {
+    regions[d.region] = 1; zones[d.zone] = 1; wards[d.ward] = 1;
+    if (d.date !== 'Unknown') dates.push(d.date);
+  });
+  dates.sort();
+  document.getElementById('mTotal').textContent     = rawData.length.toLocaleString();
+  document.getElementById('mToday').textContent     = todayData.length.toLocaleString();
+  document.getElementById('mYesterday').textContent = histData.length.toLocaleString();
+  document.getElementById('mRegions').textContent   = Object.keys(regions).length;
+  document.getElementById('mZones').textContent     = Object.keys(zones).length;
+  document.getElementById('mWards').textContent     = Object.keys(wards).length;
+  document.getElementById('mFirst').textContent     = dates[0] || '—';
+  document.getElementById('mLast').textContent      = dates[dates.length - 1] || '—';
+}
+
+/* ============================================================ HISTORICAL CHART (Blue) */
+function renderHistChart(histData) {
+  var dMap = {};
+  histData.forEach(function(d) { if (d.date !== 'Unknown') dMap[d.date] = (dMap[d.date] || 0) + 1; });
+  var dates = Object.keys(dMap).sort();
+  var qtys  = dates.map(function(d) { return dMap[d]; });
+
+  document.getElementById('histCount').textContent = histData.length + ' panels';
+  document.getElementById('histLegend').innerHTML =
+    '<span><span class="legend-dot" style="background:#378ADD"></span>Daily Installations</span>' +
+    '<span><span class="legend-dot" style="background:#E24B4A; border:1px dashed #E24B4A;"></span>Benchmark (50)</span>';
+
+  if (histChartInst) histChartInst.destroy();
+  histChartInst = new Chart(document.getElementById('histChart'), {
+    type: 'bar',
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          label: 'Installed',
+          data: qtys,
+          backgroundColor: '#378ADD99',
+          borderColor: '#185FA5',
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 2
+        },
+        {
+          label: 'Benchmark (50)',
+          data: dates.map(function() { return 50; }),
+          type: 'line',
+          borderColor: '#E24B4A',
+          borderWidth: 2,
+          borderDash: [8, 4],
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.dataset.label === 'Benchmark (50)' ? 'Benchmark: 50' : 'Installed: ' + ctx.parsed.y;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Installation Date', font: { size: 11 }, color: '#555e6d' },
+          ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 18, font: { size: 10 } },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        },
+        y: {
+          title: { display: true, text: 'Quantity', font: { size: 11 }, color: '#555e6d' },
+          beginAtZero: true,
+          ticks: { stepSize: 1 },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        }
+      }
+    }
+  });
+}
+
+/* ============================================================ TODAY LIVE CHART (Green) */
+function renderTodayChart(todayData) {
+  // Refresh UID list if panel is open
+  var uidPanel = document.getElementById('todayUIDsPanel');
+  if (uidPanel && uidPanel.style.display !== 'none') {
+    toggleTodayUIDs();
+    toggleTodayUIDs(); // close and reopen to refresh
+  }
+  var total = todayData.length;
+  document.getElementById('todayCount').textContent  = total + ' panels';
+  document.getElementById('todayBigNum').textContent = total;
+  document.getElementById('lastUpdatedTime').textContent = new Date().toLocaleTimeString();
+
+  // X-axis: region breakdown for today (or just show total as single bar)
+  var rMap = {};
+  todayData.forEach(function(d) { rMap[d.region] = (rMap[d.region] || 0) + 1; });
+  var regions = Object.keys(rMap).sort();
+  var vals    = regions.map(function(r) { return rMap[r]; });
+
+  // If no data, show empty state with single placeholder
+  if (!regions.length) { regions = ['No installations yet']; vals = [0]; }
+
+  if (todayChartInst) todayChartInst.destroy();
+  todayChartInst = new Chart(document.getElementById('todayChart'), {
+    type: 'bar',
+    data: {
+      labels: regions,
+      datasets: [
+        {
+          label: "Today's Installations",
+          data: vals,
+          backgroundColor: '#2ECC9A99',
+          borderColor: '#1D9E75',
+          borderWidth: 1,
+          borderRadius: 6,
+          order: 2
+        },
+        {
+          label: 'Benchmark (50)',
+          data: regions.map(function() { return 50; }),
+          type: 'line',
+          borderColor: '#E24B4A',
+          borderWidth: 2,
+          borderDash: [8, 4],
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.dataset.label === 'Benchmark (50)' ? 'Benchmark: 50' : "Today: " + ctx.parsed.y + ' panels';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Region', font: { size: 11 }, color: '#555e6d' },
+          ticks: { font: { size: 11 } },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        },
+        y: {
+          title: { display: true, text: "Today's Qty", font: { size: 11 }, color: '#555e6d' },
+          beginAtZero: true,
+          ticks: { stepSize: 1 },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        }
+      }
+    }
+  });
+}
+
+/* ============================================================ TODAY UIDs PANEL */
+function toggleTodayUIDs() {
+  var panel = document.getElementById('todayUIDsPanel');
+  var list  = document.getElementById('todayUIDsList');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    // Build UID list from rawData for today
+    var today     = todayStr();
+    var todayData = rawData.filter(function(d) { return d.date === today; });
+    if (!todayData.length) {
+      list.innerHTML = '<span style="color:var(--color-text-tertiary);">No installations recorded today yet.</span>';
+    } else {
+      var rows = todayData.map(function(d, i) {
+        var uidDisplay = d.uid || d.name || '—';
+        var cust = d.custName && d.custName !== 'ALL' ? d.custName : '';
+        var custTag = cust ? '<span style="color:var(--color-text-tertiary);font-size:10px;margin-left:8px;">(' + cust + ')</span>' : '';
+        return '<div style="padding:2px 0;border-bottom:0.5px solid var(--color-border-tertiary);">' +
+               '<span style="color:var(--color-text-tertiary);margin-right:8px;">' + (i+1) + '.</span>' +
+               '<strong>' + uidDisplay + '</strong>' + custTag +
+               '</div>';
+      });
+      list.innerHTML = rows.join('');
+    }
+    // scroll indicator
+    document.querySelector('#todayUIDsPanel .panel-stat-label span') &&
+      (document.querySelector('.panel-stat-label span') ? '' : '');
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+/* ============================================================ AUTO REFRESH */
+function startRefreshCycle() {
+  clearTimers();
+  countdownLeft = REFRESH_SECS;
+  updateCountdown();
+
+  // Countdown ticker every second
+  countdownTimer = setInterval(function() {
+    countdownLeft--;
+    if (countdownLeft <= 0) countdownLeft = REFRESH_SECS;
+    updateCountdown();
+  }, 1000);
+
+  // Full refresh every 15 minutes
+  refreshTimer = setInterval(function() {
+    refreshTodayOnly();
+  }, REFRESH_SECS * 1000);
+}
+
+function updateCountdown() {
+  var m = Math.floor(countdownLeft / 60);
+  var s = countdownLeft % 60;
+  document.getElementById('countdown').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+  var pct = (countdownLeft / REFRESH_SECS) * 100;
+  document.getElementById('countdownBar').style.width = pct + '%';
+}
+
+function refreshTodayOnly() {
+  // Re-fetch only today's devices to update the live panel
+  var custId = document.getElementById('fCustomer').value;
+  var region = document.getElementById('fRegion').value;
+  var zone   = document.getElementById('fZone').value;
+  var ward   = document.getElementById('fWard').value;
+  var today  = todayStr();
+
+  var url = (custId && custId !== 'ALL')
+    ? '/api/customer/' + custId + '/devices?pageSize=100&page=0&type=semc'
+    : '/api/tenant/devices?pageSize=100&page=0&type=semc';
+
+  var freshParsed = [];
+
+  function fetchAndProcess(page, collected) {
+    var u = url.replace(/page=\d+/, 'page=' + page);
+    apiGet(u).then(function(res) {
+      if (res.data) res.data.forEach(function(d) { collected.push(d); });
+      if (res.hasNext && page < 300) { fetchAndProcess(page + 1, collected); return; }
+      // Process only devices installed today
+      var batchSize = 20, batches = [], idx = 0;
+      for (var i = 0; i < collected.length; i += batchSize) batches.push(collected.slice(i, i + batchSize));
+      function nextBatch() {
+        if (idx >= batches.length) {
+          // Merge: keep historical rawData, replace today's entries
+          var hist = rawData.filter(function(d) { return d.date !== today; });
+          rawData = hist.concat(freshParsed);
+          var todayData = freshParsed;
+          var histData  = hist;
+          updateMetrics(histData, todayData);
+          renderTodayChart(todayData);
+          countdownLeft = REFRESH_SECS;
+          return;
+        }
+        Promise.all(batches[idx].map(function(dev) {
+          return apiGet('/api/plugins/telemetry/DEVICE/' + dev.id.id + '/values/attributes/SERVER_SCOPE')
+          .then(function(attrs) {
+            var m = {};
+            if (Array.isArray(attrs)) attrs.forEach(function(a) { m[a.key] = a.value; });
+            var state = (m['state'] || '').toString().toUpperCase().trim();
+            if (state !== 'INSTALLED') return;
+            var r = m['region']   || m['Region']   || 'Unknown';
+            var z = m['zoneName'] || m['zone']     || m['Zone'] || 'Unknown';
+            var w = m['wardName'] || m['ward']     || m['Ward'] || 'Unknown';
+            if (region !== 'ALL' && r !== region) return;
+            if (zone   !== 'ALL' && z !== zone)   return;
+            if (ward   !== 'ALL' && w !== ward)    return;
+            var ts = m['installedOn'];
+            var dateStr = 'Unknown';
+            if (ts !== undefined && ts !== null && ts !== '') {
+              var n = Number(ts); dateStr = isNaN(n) ? String(ts).slice(0,10) : new Date(n).toISOString().slice(0,10);
+            }
+            if (dateStr === today) freshParsed.push({ name: dev.name, date: dateStr, region: r, zone: z, ward: w });
+          }).catch(function() {});
+        })).then(function() { idx++; nextBatch(); });
+      }
+      nextBatch();
+    }).catch(function() {});
+  }
+  fetchAndProcess(0, []);
+}
+
+/* ============================================================ HIDE RESULTS */
+function hideResults() {
+  document.getElementById('metricsRow').style.display      = 'none';
+  // targetToggleRow visibility controlled by parent metricsRow
+  document.getElementById('targetPanel').classList.remove('visible');
+  document.getElementById('splitWindow').classList.remove('visible');
+  document.getElementById('resultToolbar').style.display    = 'none';
+  document.getElementById('mainTabs').style.display         = 'none';
+  targetPanelVisible = false;
+  document.getElementById('tabTable').style.display      = 'block';
+  document.getElementById('tabTrend').style.display      = 'none';
+  document.getElementById('tableHead').innerHTML = '';
+  document.getElementById('tableBody').innerHTML = '';
+  var tabs = document.querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', i === 0);
+}
+
+function resetAll() {
+  clearTimers(); destroyCharts(); hideResults(); hideStatus();
+  rawData = [];
+  assignedTotal    = 0;
+  customerTargetData = [];
+  document.getElementById('fCustomer').value = '';
+  document.getElementById('fRegion').innerHTML = '<option value="ALL">All Regions</option>';
+  document.getElementById('fZone').innerHTML   = '<option value="ALL">All Zones</option>';
+  document.getElementById('fWard').innerHTML   = '<option value="ALL">All Wards</option>';
+  document.getElementById('filterHint').textContent = 'Select a customer to begin';
+}
+
+/* ============================================================ TARGET PANEL */
+var targetPanelVisible = false;
+var targetsData = {};   // custId -> { name, assigned }
+
+function toggleTargetPanel() {
+  targetPanelVisible = !targetPanelVisible;
+  var panel = document.getElementById('targetPanel');
+  var btn   = document.getElementById('toggleTargetBtn');
+  var card  = document.getElementById('targetToggleRow');
+  if (targetPanelVisible) {
+    panel.classList.add('visible');
+    btn.innerHTML = '&#9660; Click to Hide';
+    card.style.borderStyle  = 'solid';
+    card.style.borderColor  = 'var(--blue-dark)';
+    card.style.background   = '#D6E8F8';
+    loadAndRenderTargets();
+  } else {
+    panel.classList.remove('visible');
+    btn.innerHTML = '&#9654; Click to Show';
+    card.style.borderStyle  = 'dashed';
+    card.style.borderColor  = 'var(--blue)';
+    card.style.background   = 'var(--info-bg)';
+  }
+}
+
+function loadAndRenderTargets() {
+  /* ── LOGIC ───────────────────────────────────────────────────
+     UID prefix identifies customer:
+       SSC*** → Bangalore (BBMP)
+       VSC*** → 5B Innovations
+     Assigned    = ALL smslc assets with that UID prefix (any state)
+     Installed   = state = INSTALLED
+     Installable = state = INSTALLABLE (not yet installed)
+     Pending     = Assigned - Installed
+     UIDs created at manufacturing, customer assigned at install.
+     ─────────────────────────────────────────────────────────── */
+
+  var today      = todayStr();
+  var installed  = rawData.length;
+  var todayCount = rawData.filter(function(d) { return d.date === today; }).length;
+  var custId     = document.getElementById('fCustomer').value;
+
+  document.getElementById('targetGrid').innerHTML =
+    '<div style="color:var(--text3);font-size:13px;padding:1rem;">' +
+    '<span class="spinner"></span> Counting smslc assets by UID prefix (SSC / VSC)...</div>';
+
+  // Customer definitions by UID prefix
+  // smslc ASSET uid attribute:
+  //   Bangalore (BBMP) assets  → uid starts with SSC  (e.g. SSC107SM00650)
+  //   5B Innovations assets    → uid starts with VSC
+  // Note: SEMC device names (SALSS...) are different — we use ASSET uid for counts
+  var customerDefs = [
+    { name: 'Bangalore (BBMP)', prefix: 'SSC', color: '#185FA5' },
+    { name: '5B Innovations',   prefix: 'VSC', color: '#1D9E75' }
+  ];
+
+  // Fetch ALL smslc assets from tenant (all states, no customer filter)
+  var allAssets = [];
+
+  function fetchAllSmslc(page) {
+    return apiGet('/api/tenant/assets?pageSize=100&page=' + page + '&type=smslc')
+    .then(function(res) {
+      if (res.data) res.data.forEach(function(a) { allAssets.push(a); });
+      if (res.hasNext && page < 300) return fetchAllSmslc(page + 1);
+    }).catch(function() {});
+  }
+
+  fetchAllSmslc(0)
+  .then(function() {
+    if (!allAssets.length) {
+      document.getElementById('targetGrid').innerHTML =
+        '<div style="color:var(--text3);font-size:13px;padding:1rem;">No smslc assets found.</div>';
+      return Promise.resolve(null);
+    }
+
+    // Read state attribute for each asset in batches
+    var stateMap = {};   // assetId -> { uid, state }
+
+    var batches = [];
+    for (var i = 0; i < allAssets.length; i += 20) batches.push(allAssets.slice(i, i + 20));
+    var bIdx = 0;
+
+    function processBatch() {
+      if (bIdx >= batches.length) return Promise.resolve();
+      return Promise.all(batches[bIdx++].map(function(asset) {
+        return apiGet('/api/plugins/telemetry/ASSET/' + asset.id.id + '/values/attributes/SERVER_SCOPE')
+        .then(function(attrs) {
+          var m = {};
+          if (Array.isArray(attrs)) attrs.forEach(function(a) { m[a.key] = a.value; });
+          stateMap[asset.id.id] = {
+            uid:   (m['uid'] || asset.name || '').toString().toUpperCase(),
+            state: (m['state'] || '').toString().toUpperCase().trim()
+          };
+        }).catch(function() {
+          stateMap[asset.id.id] = {
+            uid:   asset.name.toString().toUpperCase(),
+            state: 'UNKNOWN'
+          };
+        });
+      })).then(processBatch);
+    }
+
+    return processBatch().then(function() {
+      // Build per-customer stats from UID prefix
+      var results = customerDefs.map(function(def) {
+        var prefix = def.prefix.toUpperCase();
+        var matching = Object.values(stateMap).filter(function(a) {
+          return a.uid.startsWith(prefix);
+        });
+
+        var assignedCount    = matching.length;
+        assignedTotal += assignedCount; // accumulate global total
+        var installedCount   = matching.filter(function(a) { return a.state === 'INSTALLED'; }).length;
+        var installableCount = matching.filter(function(a) { return a.state === 'INSTALLABLE'; }).length;
+        var otherCount       = assignedCount - installedCount - installableCount;
+
+        // For installed qty shown in dashboard — use rawData if customer filter matches
+        // otherwise use asset state count
+        var dashInstalled = installed;
+        if (custId && custId !== 'ALL') {
+          // use rawData count (already filtered by customer)
+          dashInstalled = installed;
+        } else {
+          // use asset state count for each customer separately
+          dashInstalled = installedCount;
+        }
+
+        // Calculate todayCount per customer
+        // When all customers loaded: match by custName tagged in rawData
+        // When single customer: all rawData belongs to that customer
+        var custTodayCount;
+        if (custId && custId !== 'ALL') {
+          custTodayCount = todayCount;
+        } else {
+          // Match by customerTitle (from deviceInfos API) — most reliable
+          // Fallback to uid prefix if customerTitle not available
+          var pfx = def.prefix.toUpperCase();
+          var defNameUp = def.name.toUpperCase();
+          custTodayCount = rawData.filter(function(d) {
+            if (d.date !== today) return false;
+            if (d.custName && d.custName !== 'ALL') {
+              // customerTitle match e.g. "Bangalore (BBMP)" contains "BANGAL"
+              return d.custName.toUpperCase().indexOf(defNameUp.slice(0,5)) !== -1;
+            }
+            // fallback: uid prefix
+            return d.uid && d.uid.startsWith(pfx);
+          }).length;
+        }
+
+        return {
+          name:        def.name,
+          prefix:      def.prefix,
+          color:       def.color,
+          assigned:    assignedCount,
+          installed:   dashInstalled,
+          installedAsset: installedCount,
+          installable: installableCount,
+          other:       otherCount,
+          todayCount:  custTodayCount
+        };
+      });
+
+      // If a specific customer is selected, show only that customer
+      if (custId && custId !== 'ALL') {
+        var custName = (customersMap[custId] || '').toUpperCase();
+        results = results.filter(function(r) {
+          return custName.indexOf(r.name.toUpperCase()) !== -1 ||
+                 r.name.toUpperCase().indexOf(custName) !== -1;
+        });
+        if (!results.length) results = [
+          { name: customersMap[custId] || custId, prefix: '?',
+            color: '#185FA5', assigned: allAssets.length,
+            installed: installed, installedAsset: installed,
+            installable: 0, other: 0, todayCount: todayCount }  // single customer: todayCount is already correct
+        ];
+      }
+
+      customerTargetData = results; // store globally for Summary tab
+      renderTargets(results, today);
+      // Re-render Summary tab with correct assigned/installable data
+      if (document.getElementById('tabSummary').style.display !== 'none') {
+        renderSummaryTab();
+      }
+    });
+  })
+  .catch(function(err) {
+    document.getElementById('targetGrid').innerHTML =
+      '<div style="color:var(--red-text);font-size:13px;padding:1rem;">Error: ' + err.message + '</div>';
+  });
+}
+
+function renderTargets(customers, today) {
+  var html = '';
+
+  customers.forEach(function(c, idx) {
+    var assigned    = c.assigned;
+    var installed   = c.installedAsset || 0;
+    var installable = c.installable    || 0;
+    var other       = Math.max(0, assigned - installed - installable);
+    var todayCount  = c.todayCount;
+    var pending     = assigned > installed ? assigned - installed : 0;
+    var pct         = assigned > 0 ? Math.min(Math.round((installed / assigned) * 100), 100) : 0;
+    var canvasId    = 'donutChart_' + idx;
+
+    html += '<div class="target-card" style="border-left:4px solid ' + c.color + ';">';
+
+    html += '<div class="target-card-name">' +
+              '<i class="ti ti-building" style="color:' + c.color + '"></i>' +
+              c.name +
+              '<span style="margin-left:auto;font-size:11px;background:' + c.color + '22;' +
+              'color:' + c.color + ';padding:2px 8px;border-radius:20px;font-weight:600;">' +
+              c.prefix + '***</span>' +
+            '</div>';
+
+    html += '<div class="target-card-inner">';
+
+    html +=   '<div class="target-donut-wrap">' +
+                '<canvas id="' + canvasId + '"></canvas>' +
+                '<div class="donut-center">' +
+                  '<div class="donut-pct" style="color:' + c.color + '">' + pct + '%</div>' +
+                  '<div class="donut-lbl">Done</div>' +
+                '</div>' +
+              '</div>';
+
+    html +=   '<div class="target-details">';
+    html +=     '<div class="target-numbers" style="flex-wrap:wrap;">';
+    html +=       '<div class="target-num"><div class="target-num-val" style="color:' + c.color + '">' + assigned.toLocaleString() + '</div><div class="target-num-lbl">Total UIDs</div></div>';
+    html +=       '<div class="target-num"><div class="target-num-val val-installed">' + installed.toLocaleString() + '</div><div class="target-num-lbl">Installed</div></div>';
+    html +=       '<div class="target-num"><div class="target-num-val" style="color:#BA7517;">' + installable.toLocaleString() + '</div><div class="target-num-lbl">Installable</div></div>';
+    html +=       '<div class="target-num"><div class="target-num-val val-today">+' + todayCount + '</div><div class="target-num-lbl">Today</div></div>';
+    html +=       '<div class="target-num"><div class="target-num-val val-pending">' + pending.toLocaleString() + '</div><div class="target-num-lbl">Pending</div></div>';
+    html +=     '</div>';
+    html +=     '<div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">';
+    html +=       '<span style="font-size:11px;display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block;"></span>Installed</span>';
+    html +=       '<span style="font-size:11px;display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block;"></span>Installable</span>';
+    html +=       '<span style="font-size:11px;display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:#ddd;display:inline-block;"></span>Other</span>';
+    html +=     '</div>';
+    html +=   '</div>';
+
+    html += '</div>';
+    html += '</div>';
+  });
+
+  document.getElementById('targetGrid').innerHTML =
+    html || '<div style="color:var(--text3);font-size:13px;padding:1rem;">No data available.</div>';
+
+  customers.forEach(function(c, idx) {
+    var canvas = document.getElementById('donutChart_' + idx);
+    if (!canvas) return;
+    var assigned    = c.assigned;
+    var installed   = c.installedAsset || 0;
+    var installable = c.installable    || 0;
+    var other       = Math.max(0, assigned - installed - installable);
+    var segments    = assigned > 0 ? [installed, installable, other] : [0, 0, 1];
+
+    new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Installed', 'Installable', 'Other'],
+        datasets: [{
+          data: segments,
+          backgroundColor: ['#1D9E75', '#BA7517', '#e8eaed'],
+          borderColor:     ['#ffffff',  '#ffffff',  '#ffffff'],
+          borderWidth: 2,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: false,
+        cutout: '68%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                if (assigned === 0) return 'No data';
+                var p = Math.round((ctx.parsed / assigned) * 100);
+                return ctx.label + ': ' + ctx.parsed.toLocaleString() + ' (' + p + '%)';
+              }
+            }
+          }
+        },
+        animation: { animateRotate: true, duration: 800 }
+      }
+    });
+  });
+}
+
+/* ============================================================ TABLE + TREND */
+function applyView() {
+  var gb = document.getElementById('groupBy').value;
+  renderTable(rawData, gb);
+  renderTrendChart(rawData);
+}
+
+function renderTable(data, gb) {
+  var head = '', rows = [];
+  if (gb === 'rzw') {
+    var grouped = {};
+    data.forEach(function(d) {
+      var k = d.region + '||' + d.zone + '||' + d.ward;
+      if (!grouped[k]) grouped[k] = { region: d.region, zone: d.zone, ward: d.ward, byDate: {}, total: 0 };
+      grouped[k].byDate[d.date] = (grouped[k].byDate[d.date] || 0) + 1;
+      grouped[k].total++;
+    });
+    var dateMap = {};
+    data.forEach(function(d) { if (d.date !== 'Unknown') dateMap[d.date] = 1; });
+    var dates = Object.keys(dateMap).sort();
+    head = '<tr><th>Region</th><th>Zone</th><th>Ward</th>';
+    dates.forEach(function(d) { head += '<th class="num">' + d + '</th>'; });
+    head += '<th class="num">Total</th></tr>';
+    var totals = {};
+    Object.keys(grouped).sort().forEach(function(k) {
+      var g = grouped[k];
+      var row = '<tr><td>' + g.region + '</td><td>' + g.zone + '</td><td>' + g.ward + '</td>';
+      dates.forEach(function(d) {
+        totals[d] = (totals[d] || 0) + (g.byDate[d] || 0);
+        row += '<td class="num">' + (g.byDate[d] || '') + '</td>';
+      });
+      row += '<td class="num"><strong>' + g.total + '</strong></td></tr>';
+      rows.push(row);
+    });
+    var foot = '<tr class="total-row"><td colspan="3">Grand Total</td>';
+    dates.forEach(function(d) { foot += '<td class="num">' + (totals[d] || 0) + '</td>'; });
+    foot += '<td class="num">' + data.length + '</td></tr>';
+    rows.push(foot);
+  } else {
+    var g2 = {};
+    data.forEach(function(d) {
+      var key = gb==='date'?d.date : gb==='region'?d.region : gb==='zone'?d.zone : d.ward;
+      if (!g2[key]) g2[key] = { count: 0, regions: {}, zones: {}, wards: {} };
+      g2[key].count++; g2[key].regions[d.region]=1; g2[key].zones[d.zone]=1; g2[key].wards[d.ward]=1;
+    });
+    var lbl = gb.charAt(0).toUpperCase() + gb.slice(1);
+    head = '<tr><th>' + lbl + '</th><th class="num">Installed</th><th>Regions</th><th>Zones</th><th>Wards</th></tr>';
+    Object.keys(g2).sort().forEach(function(k) {
+      var g = g2[k];
+      rows.push('<tr><td><strong>' + k + '</strong></td><td class="num">' + g.count.toLocaleString() + '</td>' +
+        '<td>' + Object.keys(g.regions).join(', ') + '</td>' +
+        '<td>' + Object.keys(g.zones).join(', ')   + '</td>' +
+        '<td>' + Object.keys(g.wards).join(', ')   + '</td></tr>');
+    });
+    rows.push('<tr class="total-row"><td>Total</td><td class="num">' + data.length.toLocaleString() + '</td><td></td><td></td><td></td></tr>');
+  }
+  document.getElementById('tableHead').innerHTML = head;
+  document.getElementById('tableBody').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="10" style="text-align:center;padding:2rem;color:#8a94a6;">No records found.</td></tr>';
+}
+
+function renderTrendChart(data) {
+  var rMap = {}, dMap = {};
+  data.forEach(function(d) { rMap[d.region]=1; if (d.date!=='Unknown') dMap[d.date]=1; });
+  var regions = Object.keys(rMap).sort();
+  var dates   = Object.keys(dMap).sort();
+  var byDR = {};
+  data.forEach(function(d) { if (!byDR[d.date]) byDR[d.date]={}; byDR[d.date][d.region]=(byDR[d.date][d.region]||0)+1; });
+  var COLS = ['#378ADD','#1D9E75','#D85A30','#D4537E','#BA7517','#639922','#7F77DD','#E24B4A'];
+  var leg = '';
+  regions.forEach(function(r,i) {
+    leg += '<span><span class="legend-dot" style="background:'+COLS[i%COLS.length]+'"></span>'+r+'</span>';
+  });
+  document.getElementById('trendLegend').innerHTML = leg;
+  var datasets = regions.map(function(r,i) {
+    return { label:r, data:dates.map(function(d){return (byDR[d]&&byDR[d][r])?byDR[d][r]:0;}),
+      borderColor:COLS[i%COLS.length], backgroundColor:COLS[i%COLS.length]+'18',
+      tension:0.35, fill:false, pointRadius:4, borderWidth:2 };
+  });
+  datasets.push({ label:'Benchmark (50)', data:dates.map(function(){return 50;}),
+    borderColor:'#E24B4A', borderWidth:2, borderDash:[8,4], pointRadius:0, fill:false, tension:0 });
+  if (trendInst) trendInst.destroy();
+  trendInst = new Chart(document.getElementById('trendChart'), {
+    type:'line', data:{ labels:dates, datasets:datasets },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ x:{title:{display:true,text:'Installation Date',font:{size:11},color:'#555e6d'},
+                  ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:16},grid:{color:'rgba(0,0,0,0.05)'}},
+               y:{title:{display:true,text:'Quantity Installed',font:{size:11},color:'#555e6d'},
+                  beginAtZero:true,ticks:{stepSize:1},grid:{color:'rgba(0,0,0,0.05)'}} } }
+  });
+}
+
+/* ============================================================ TABS + EXPORT */
+function switchTab(name, btn) {
+  var tabs = document.querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+  btn.classList.add('active');
+  document.getElementById('tabTable').style.display = name==='table' ? 'block' : 'none';
+  document.getElementById('tabTrend').style.display = name==='trend' ? 'block' : 'none';
+}
+
+
+function renderSummaryTab() {
+  var el = document.getElementById('tabSummary');
+  if (!rawData || !rawData.length) {
+    el.innerHTML = '<p style="padding:20px;color:var(--color-text-secondary);">No data loaded. Please load data first.</p>';
+    return;
+  }
+
+  var today     = new Date().toISOString().slice(0, 10);
+  var yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  var todayData = rawData.filter(function(d){ return d.date === today; });
+  var yestData  = rawData.filter(function(d){ return d.date === yesterday; });
+  var histData  = rawData.filter(function(d){ return d.date < today; });
+
+  // Date map for avg
+  var dateMap = {};
+  histData.forEach(function(d){ if(d.date!=='Unknown') dateMap[d.date]=(dateMap[d.date]||0)+1; });
+  var allDates = Object.keys(dateMap).sort();
+  var last7    = allDates.slice(-7).map(function(d){ return dateMap[d]||0; });
+  var avg7     = last7.length ? Math.round(last7.reduce(function(a,b){return a+b;},0)/last7.length) : 0;
+
+  // Zone map
+  var zoneMap = {};
+  rawData.forEach(function(d){ zoneMap[d.zone]=(zoneMap[d.zone]||0)+1; });
+  var zones = Object.keys(zoneMap).map(function(k){ return [k, zoneMap[k]]; });
+  zones.sort(function(a,b){ return b[1]-a[1]; });
+
+  // Dates
+  var dates = rawData.map(function(d){return d.date;}).filter(function(d){return d!=='Unknown';}).sort();
+  var total  = rawData.length;
+  var B      = 50;
+
+  // Assigned and Installable
+  // Priority: customerTargetData (from donut) > assignedTotal > rawData.length
+  var assigned    = 0;
+  var installable = 0;
+
+  if (customerTargetData && customerTargetData.length) {
+    // Use data from Assigned Targets panel — most accurate
+    customerTargetData.forEach(function(c){
+      assigned    += (c.assigned    || 0);
+      installable += (c.installable || 0);
+    });
+  } else if (assignedTotal && assignedTotal > 0) {
+    // Use accumulated assignedTotal
+    assigned    = assignedTotal;
+    installable = Math.max(0, assigned - total);
+  } else {
+    // Fallback — show note to load targets
+    assigned    = total;
+    installable = 0;
+  }
+
+  var pct       = assigned > 0 ? Math.min(Math.round((total/assigned)*100),100) : 100;
+  var progColor = pct >= 80 ? '#1D9E75' : pct >= 50 ? '#BA7517' : '#E24B4A';
+  var perfStatus = yestData.length >= B
+    ? '<span style="color:#1D9E75;font-weight:600;">&#10003; Target met ('+yestData.length+'/'+B+')</span>'
+    : '<span style="color:#E24B4A;font-weight:600;">&#9888; Below target ('+yestData.length+'/'+B+')</span>';
+
+  // Zone rows
+  var zoneRowsHTML = '';
+  zones.forEach(function(z, i){
+    var isUnk = z[0] === 'Unknown';
+    var pctZ  = total > 0 ? ((z[1]/total)*100).toFixed(1) : '0.0';
+    var bg    = isUnk ? '#FAEEDA' : (i%2===0 ? 'var(--color-background-primary)' : 'var(--color-background-secondary)');
+    var clr   = isUnk ? '#BA7517' : '#185FA5';
+    var lbl   = isUnk ? '&#9888; Zone not assigned' : z[0];
+    zoneRowsHTML +=
+      '<tr style="background:'+bg+'">'+
+      '<td style="padding:6px 10px;font-size:11px;color:var(--color-text-tertiary);">'+(i+1)+'</td>'+
+      '<td style="padding:6px 10px;font-size:13px;border-bottom:1px solid var(--color-border-tertiary);'+(isUnk?'color:#BA7517;font-weight:500;':'')+'">'+lbl+'</td>'+
+      '<td style="padding:6px 10px;font-size:13px;border-bottom:1px solid var(--color-border-tertiary);text-align:right;font-weight:600;color:'+clr+';">'+z[1]+'</td>'+
+      '<td style="padding:6px 10px;font-size:11px;border-bottom:1px solid var(--color-border-tertiary);text-align:right;color:var(--color-text-tertiary);">'+pctZ+'%</td>'+
+      '</tr>';
+  });
+  zoneRowsHTML +=
+    '<tr style="background:var(--color-background-secondary);">'+
+    '<td colspan="2" style="padding:7px 10px;font-size:13px;font-weight:600;border-top:1px solid var(--color-border-tertiary);">Total</td>'+
+    '<td style="padding:7px 10px;font-size:13px;font-weight:600;text-align:right;color:#185FA5;border-top:1px solid var(--color-border-tertiary);">'+total.toLocaleString()+'</td>'+
+    '<td style="padding:7px 10px;font-size:11px;text-align:right;color:var(--color-text-tertiary);border-top:1px solid var(--color-border-tertiary);">100%</td>'+
+    '</tr>';
+
+  var assignedNote = '';
+
+  el.innerHTML =
+    '<div style="max-width:680px;margin:0 auto;padding:20px 0;">'+
+
+    '<div style="background:var(--color-background-secondary);border-left:3px solid #185FA5;border-radius:var(--border-radius-md);padding:12px 16px;font-size:14px;color:var(--color-text-secondary);line-height:1.6;margin-bottom:16px;">'+
+    '<strong style="color:var(--color-text-primary);">Hi Team,</strong><br>'+
+    'Here is the SLC Panel Installation quantity in numbers along with daily summary for '+
+    '<strong style="color:#185FA5;">Bangalore (BBMP)</strong> as of <strong style="color:#185FA5;">'+today+'</strong>.'+
+    '</div>'+
+
+    // Row 1
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">'+
+    '<div style="background:#EAF3DE;border:1px solid #C0DD97;border-top:3px solid #1D9E75;border-radius:var(--border-radius-md);padding:14px;text-align:center;">'+
+    '<div style="font-size:28px;font-weight:600;color:#1D9E75;">'+assigned.toLocaleString()+'</div>'+
+    '<div style="font-size:10px;color:#27500A;text-transform:uppercase;letter-spacing:.05em;margin-top:4px;">Total Assigned</div></div>'+
+    '<div style="background:#E6F1FB;border:1px solid #B5D4F4;border-top:3px solid #185FA5;border-radius:var(--border-radius-md);padding:14px;text-align:center;">'+
+    '<div style="font-size:28px;font-weight:600;color:#185FA5;">'+total.toLocaleString()+'</div>'+
+    '<div style="font-size:10px;color:#0C447C;text-transform:uppercase;letter-spacing:.05em;margin-top:4px;">Total Installed</div></div>'+
+    '<div style="background:#FAEEDA;border:1px solid #F0C070;border-top:3px solid #BA7517;border-radius:var(--border-radius-md);padding:14px;text-align:center;">'+
+    '<div style="font-size:28px;font-weight:600;color:#BA7517;">'+installable.toLocaleString()+'</div>'+
+    '<div style="font-size:10px;color:#633806;text-transform:uppercase;letter-spacing:.05em;margin-top:4px;">Installable</div></div>'+
+    '</div>'+
+
+
+    // Row 2
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;margin-top:8px;">'+
+    '<div style="background:#EAF3DE;border:1px solid #C0DD97;border-top:3px solid #1D9E75;border-radius:var(--border-radius-md);padding:14px;text-align:center;">'+
+    '<div style="font-size:28px;font-weight:600;color:#1D9E75;">'+todayData.length+'</div>'+
+    '<div style="font-size:10px;color:#27500A;text-transform:uppercase;letter-spacing:.05em;margin-top:4px;">Today</div></div>'+
+    '<div style="background:#E6F1FB;border:1px solid #B5D4F4;border-top:3px solid #185FA5;border-radius:var(--border-radius-md);padding:14px;text-align:center;">'+
+    '<div style="font-size:28px;font-weight:600;color:#185FA5;">'+yestData.length+'</div>'+
+    '<div style="font-size:10px;color:#0C447C;text-transform:uppercase;letter-spacing:.05em;margin-top:4px;">Yesterday</div></div>'+
+    '<div style="background:#FAEEDA;border:1px solid #F0C070;border-top:3px solid #BA7517;border-radius:var(--border-radius-md);padding:14px;text-align:center;">'+
+    '<div style="font-size:28px;font-weight:600;color:#BA7517;">'+avg7+'</div>'+
+    '<div style="font-size:10px;color:#633806;text-transform:uppercase;letter-spacing:.05em;margin-top:4px;">7-day average</div></div>'+
+    '</div>'+
+
+    // Progress
+    '<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:14px 16px;margin-bottom:16px;">'+
+    '<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">'+
+    '<span><strong>Overall progress:</strong> &nbsp;'+total.toLocaleString()+' of '+assigned.toLocaleString()+' installed</span>'+
+    '<span style="font-weight:600;color:'+progColor+';">'+pct+'%</span></div>'+
+    '<div style="height:10px;background:var(--color-border-tertiary);border-radius:5px;overflow:hidden;">'+
+    '<div style="height:100%;width:'+pct+'%;background:'+progColor+';border-radius:5px;"></div></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-text-tertiary);margin-top:6px;">'+
+    '<span>Yesterday: '+perfStatus+'</span>'+
+    '<span>Target: '+B+'/day &nbsp;|&nbsp; 7-day avg: '+avg7+'</span></div>'+
+    '</div>'+
+
+    // Zone table
+    '<div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Zone-wise installation count</div>'+
+    '<div style="border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);overflow:hidden;margin-bottom:16px;">'+
+    '<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#0C447C;">'+
+    '<th style="padding:8px 10px;text-align:left;color:#fff;font-size:11px;width:32px;">#</th>'+
+    '<th style="padding:8px 10px;text-align:left;color:#fff;font-size:11px;">Zone</th>'+
+    '<th style="padding:8px 10px;text-align:right;color:#fff;font-size:11px;">Installed</th>'+
+    '<th style="padding:8px 10px;text-align:right;color:#fff;font-size:11px;">% Share</th>'+
+    '</tr></thead><tbody>'+zoneRowsHTML+'</tbody></table></div>'+
+
+    // Dates
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
+    '<div style="background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px 16px;display:flex;align-items:center;gap:10px;">'+
+    '<i class="ti ti-calendar-event" style="font-size:24px;color:#185FA5;"></i>'+
+    '<div><div style="font-size:10px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.05em;">First installed</div>'+
+    '<div style="font-size:15px;font-weight:600;color:var(--color-text-primary);margin-top:2px;">'+(dates[0]||'--')+'</div></div></div>'+
+    '<div style="background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px 16px;display:flex;align-items:center;gap:10px;">'+
+    '<i class="ti ti-calendar-check" style="font-size:24px;color:#1D9E75;"></i>'+
+    '<div><div style="font-size:10px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.05em;">Latest installed</div>'+
+    '<div style="font-size:15px;font-weight:600;color:var(--color-text-primary);margin-top:2px;">'+(dates[dates.length-1]||'--')+'</div></div></div>'+
+    '</div>'+
+    '</div>';
+}
+
+
+function exportCSV() {
+  var rows = [['Device Name','Install Date','Region','Zone','Ward']];
+  rawData.forEach(function(d) { rows.push([d.name, d.date, d.region, d.zone, d.ward]); });
+  var csv = rows.map(function(r) {
+    return r.map(function(v) { return '"' + String(v).replace(/"/g,'""') + '"'; }).join(',');
+  }).join('\n');
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
+  a.download = 'slc_installations_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+</script>
+</body>
+</html>
