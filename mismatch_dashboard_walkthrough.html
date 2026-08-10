@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SLC Mismatch Dashboard — Interactive Walkthrough</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background:#f5f6f8; margin:0; padding:24px; color:#1a1a1a; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { font-size:13px; color:#8a94a6; margin-bottom:20px; }
+  .banner { background:#185FA5; color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; }
+  .banner button { background:#fff; color:#185FA5; border:none; padding:6px 14px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600; }
+
+  .cards { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:28px; }
+  .card { flex:1; min-width:180px; background:#fff; border:1px solid #e3e6ea; border-radius:10px; padding:18px; text-align:center; }
+  .card .num { font-size:26px; font-weight:700; }
+  .card .lbl { font-size:11px; color:#8a94a6; text-transform:uppercase; margin-top:6px; letter-spacing:.03em; }
+  .card.total .num { color:#185FA5; }
+  .card.mismatch .num { color:#c0392b; }
+  table { border-collapse:collapse; width:100%; background:#fff; border-radius:8px; overflow:hidden; margin-bottom:16px;}
+  th { background:#185FA5; color:#fff; text-align:left; padding:9px 12px; font-size:11px; text-transform:uppercase; }
+  td { padding:8px 12px; border-bottom:1px solid #eee; font-size:13px; }
+  td.mono { font-family: Consolas, monospace; }
+  h3 { font-size:13px; margin:20px 0 8px; color:#333; }
+  button.primary { background:#185FA5; color:#fff; border:none; padding:10px 20px; border-radius:6px; font-size:13px; cursor:pointer; }
+  button.primary:disabled { background:#a9b6c4; }
+  .badge { background:#fdecea; color:#c0392b; font-size:10px; padding:2px 6px; border-radius:10px; }
+
+  /* Tour overlay */
+  #tourOverlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:900; display:none; }
+  #spotlight { position:fixed; border-radius:10px; box-shadow:0 0 0 4000px rgba(0,0,0,0.55); z-index:901; pointer-events:none; transition:all .35s ease; }
+  #tooltip { position:fixed; background:#fff; border-radius:10px; padding:16px 18px; max-width:320px; z-index:902; box-shadow:0 8px 24px rgba(0,0,0,0.25); transition:all .35s ease; }
+  #tooltip .step-count { font-size:11px; color:#8a94a6; margin-bottom:6px; }
+  #tooltip .step-text { font-size:13px; line-height:1.5; margin-bottom:14px; }
+  #tooltip .step-btns { display:flex; justify-content:space-between; }
+  #tooltip button { border:none; padding:7px 14px; border-radius:6px; font-size:12px; cursor:pointer; }
+  #tooltip .btn-next { background:#185FA5; color:#fff; }
+  #tooltip .btn-skip { background:transparent; color:#8a94a6; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <span>📽️ This is a simulated walkthrough — no real ThingsBoard login needed. All data below is fake sample data for teaching purposes.</span>
+  <button onclick="startTour()">▶ Start Guided Tour</button>
+</div>
+
+<h1>SLC Panel — Meter Serial Number Mismatch Dashboard <span style="font-size:12px;color:#8a94a6;font-weight:normal;">v2.5.0 (demo)</span></h1>
+<div class="sub">
+  Meter ID ranges:
+  <span style="background:#e8f0fe;color:#185FA5;font-weight:700;padding:3px 10px;border-radius:12px;margin:0 4px;">SALSS000001 – SALSS007800 = Bangalore (BBMP)</span>
+  <span style="background:#fff4e5;color:#c9700a;font-weight:700;padding:3px 10px;border-radius:12px;margin:0 4px;">SALSS007801 – SALSS013300 = 5B Innovations</span>
+</div>
+
+<div id="loginArea" style="background:#fff;border:1px solid #e3e6ea;border-radius:10px;padding:18px;max-width:420px;margin-bottom:16px;">
+  <div style="font-size:12px;color:#8a94a6;margin-bottom:10px;">Enter your ThingsBoard login (not saved anywhere)</div>
+  <input id="tbUser" type="text" placeholder="Username / email" value="demo.user@schnellenergy.com" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;box-sizing:border-box;">
+  <input id="tbPass" type="password" placeholder="Password" value="demopassword" style="width:100%;padding:8px 10px;margin-bottom:14px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;box-sizing:border-box;">
+
+  <div style="border-top:1px solid #eef0f3;margin:0 0 14px;"></div>
+
+  <div style="font-size:12px;color:#8a94a6;margin-bottom:6px;">View <span style="color:#1D9E75;">(switches instantly — no reload needed)</span></div>
+  <div id="radioGroup" style="margin-bottom:16px;font-size:13px;">
+    <label style="margin-right:16px;cursor:pointer;"><input type="radio" name="stateFilter" id="radioInstalled" value="INSTALLED" checked onchange="simRadioChange()"> Installed</label>
+    <label style="cursor:pointer;"><input type="radio" name="stateFilter" id="radioInstallable" value="INSTALLABLE" onchange="simRadioChange()"> Installable</label>
+  </div>
+
+  <div style="border-top:1px solid #eef0f3;margin:0 0 14px;"></div>
+
+  <button class="primary" id="loadBtn" onclick="simLoadData()">Load Data</button>
+  <div style="font-size:11px;color:#8a94a6;margin-top:6px;">Only click this to fetch fresh data from ThingsBoard</div>
+</div>
+<div id="status" style="font-size:13px;color:#555;margin:12px 0;"></div>
+<div id="timer" style="font-size:12px;color:#185FA5;margin:4px 0 12px;"></div>
+
+<div class="cards" id="cards" style="display:none;"></div>
+<h3 id="mismatchHeading" style="display:none;"></h3>
+<div id="mismatchArea"></div>
+
+<div id="tourOverlay"></div>
+<div id="spotlight" style="display:none;"></div>
+<div id="tooltip" style="display:none;">
+  <div class="step-count" id="stepCount"></div>
+  <div class="step-text" id="stepText"></div>
+  <div class="step-btns">
+    <button class="btn-skip" onclick="endTour()">Skip tour</button>
+    <button class="btn-next" id="nextBtn" onclick="nextStep()">Next →</button>
+  </div>
+</div>
+
+<script>
+/* ============ FAKE DATA (for teaching only) ============ */
+const FAKE = {
+  INSTALLED: {
+    totals: { SSC: 3505, VSC: 1696 },
+    serialMismatches: [
+      { panelLabel: 'VSC107SM01430', meterId: 'SALSS001108', expected: 'SALSS007801–SALSS013300', bothIssues: true },
+      { panelLabel: 'VSC107SM01431', meterId: 'SALSS001173', expected: 'SALSS007801–SALSS013300', bothIssues: true },
+    ],
+    customerMismatches: [
+      { panelLabel: 'SSC107SMD0001', meterId: 'SALSS000194', current: 'DEMO', expected: 'Bangalore (BBMP)', bothIssues: false },
+      { panelLabel: 'SSC107SM02057', meterId: 'SALSS001845', current: 'SR United Infra Developers', expected: 'Bangalore (BBMP)', bothIssues: false },
+      { panelLabel: 'VSC107SM01431', meterId: 'SALSS001173', current: 'Bangalore (BBMP)', expected: '5B Innovations', bothIssues: true },
+      { panelLabel: 'VSC107SM01430', meterId: 'SALSS001108', current: 'Bangalore (BBMP)', expected: '5B Innovations', bothIssues: true },
+    ],
+    diag: { checked: 5205, blank: 0, unrecognized: 97 },
+  },
+  INSTALLABLE: {
+    totals: { SSC: 412, VSC: 208 },
+    serialMismatches: [
+      { panelLabel: 'SSC107SM09912', meterId: 'SALSS009900', expected: 'SALSS000001–SALSS007800', bothIssues: false },
+    ],
+    customerMismatches: [],
+    diag: { checked: 620, blank: 3, unrecognized: 14 },
+  },
+};
+
+/* ============ SIMULATED DASHBOARD BEHAVIOR ============ */
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+function renderFake(stateVal) {
+  const data = FAKE[stateVal];
+  const stateLabel = stateVal === 'INSTALLABLE' ? 'Installable' : 'Installed';
+
+  const cardsEl = document.getElementById('cards');
+  cardsEl.innerHTML =
+    '<div class="card total"><div class="num">' + data.totals.SSC + '</div><div class="lbl">Total ' + stateLabel + ' — Bangalore (BBMP)</div></div>' +
+    '<div class="card total"><div class="num">' + data.totals.VSC + '</div><div class="lbl">Total ' + stateLabel + ' — 5B Innovations</div></div>' +
+    '<div class="card mismatch"><div class="num">' + data.serialMismatches.length + '</div><div class="lbl">Serial Number Mismatches</div></div>' +
+    '<div class="card mismatch"><div class="num">' + data.customerMismatches.length + '</div><div class="lbl">Wrong Customer Mismatches</div></div>';
+  cardsEl.style.display = 'flex';
+
+  const heading = document.getElementById('mismatchHeading');
+  heading.textContent = 'Mismatch Details (' + (data.serialMismatches.length + data.customerMismatches.length) + ')';
+  heading.style.display = 'block';
+
+  let html = '<h3>Serial Number Mismatches (' + data.serialMismatches.length + ')</h3>';
+  if (!data.serialMismatches.length) {
+    html += '<div style="padding:16px;color:#8a94a6;font-size:13px;background:#fff;border-radius:8px;">No serial number mismatches found.</div>';
+  } else {
+    const rows = data.serialMismatches.map(function(m) {
+      const badge = m.bothIssues ? ' <span class="badge">also wrong customer</span>' : '';
+      return '<tr><td class="mono">' + m.panelLabel + badge + '</td><td class="mono">' + m.meterId + '</td><td>' + m.expected + '</td></tr>';
+    }).join('');
+    html += '<table><tr><th>Panel Label</th><th>Meter Serial</th><th>Expected Range</th></tr>' + rows + '</table>';
+  }
+
+  html += '<h3>Installed With Wrong Customer (' + data.customerMismatches.length + ')</h3>';
+  if (!data.customerMismatches.length) {
+    html += '<div style="padding:16px;color:#8a94a6;font-size:13px;background:#fff;border-radius:8px;">No customer assignment mismatches found.</div>';
+  } else {
+    const rows = data.customerMismatches.map(function(m) {
+      const badge = m.bothIssues ? ' <span class="badge">also wrong serial</span>' : '';
+      return '<tr><td class="mono">' + m.panelLabel + badge + '</td><td class="mono">' + m.meterId + '</td><td>' + m.current + '</td><td>' + m.expected + '</td></tr>';
+    }).join('');
+    html += '<table><tr><th>Panel Label</th><th>Meter Serial</th><th>Actual Customer Name</th><th>Expected Customer</th></tr>' + rows + '</table>';
+  }
+  document.getElementById('mismatchArea').innerHTML = html;
+
+  setStatus('Done — loaded (demo) | Meters checked: ' + data.diag.checked + ' | Blank label: ' + data.diag.blank + ' | Unrecognized format: ' + data.diag.unrecognized);
+  document.getElementById('timer').textContent = 'Load completed in 01:42 (simulated)';
+}
+
+let hasLoadedOnce = false;
+function simLoadData() {
+  const btn = document.getElementById('loadBtn');
+  btn.disabled = true;
+  document.getElementById('cards').style.display = 'none';
+  document.getElementById('mismatchHeading').style.display = 'none';
+  document.getElementById('mismatchArea').innerHTML = '';
+
+  let secondsLeft = 5; // fast simulated countdown for the demo
+  setStatus('Authenticating with ThingsBoard (simulated)...');
+  document.getElementById('timer').textContent = 'Estimated time remaining: 00:0' + secondsLeft;
+  const interval = setInterval(function() {
+    secondsLeft--;
+    if (secondsLeft > 0) {
+      document.getElementById('timer').textContent = 'Estimated time remaining: 00:0' + secondsLeft;
+      if (secondsLeft === 4) setStatus('Fetching all tenant assets and devices (simulated)...');
+      if (secondsLeft === 2) setStatus('Checking meters against panel labels (simulated)...');
+    } else {
+      clearInterval(interval);
+      const stateVal = document.querySelector('input[name="stateFilter"]:checked').value;
+      renderFake(stateVal);
+      btn.disabled = false;
+      btn.textContent = 'Reload Data';
+      hasLoadedOnce = true;
+      if (tourActive) setTimeout(nextStep, 400);
+    }
+  }, 350); // sped up for the walkthrough
+}
+
+function simRadioChange() {
+  if (!hasLoadedOnce) return;
+  setStatus('Re-filtering already-loaded data (simulated, instant)...');
+  const stateVal = document.querySelector('input[name="stateFilter"]:checked').value;
+  renderFake(stateVal);
+}
+
+/* ============ GUIDED TOUR ENGINE ============ */
+const steps = [
+  {
+    el: '#loginArea',
+    text: 'This is where you log into ThingsBoard. Your username and password are never saved — you\'ll re-enter them each time you open the dashboard.',
+  },
+  {
+    el: '#radioGroup',
+    text: 'Choose which view you want: "Installed" panels (fully checked against both serial number and customer) or "Installable" panels (not yet assigned, so only the serial number is checked).',
+  },
+  {
+    el: '#loadBtn',
+    text: 'Click "Load Data" to fetch everything from ThingsBoard. Let\'s simulate that now — watch the status line and countdown timer below the button.',
+    action: function() { simLoadData(); },
+    waitForAction: true,
+  },
+  {
+    el: '#cards',
+    text: 'These cards summarize the results: total installed panels per customer, plus counts of each mismatch type.',
+  },
+  {
+    el: '#mismatchArea',
+    text: 'Below, two separate tables break down Serial Number Mismatches and Wrong Customer assignments. Notice the red "also wrong customer/serial" badges — those panels have BOTH problems, usually meaning a physical panel/meter swap happened during installation.',
+  },
+  {
+    el: '#radioGroup',
+    text: 'Now try switching to "Installable" — since data is already loaded, this updates instantly with no need to click Load Data again.',
+    action: function() { document.getElementById('radioInstallable').checked = true; simRadioChange(); },
+  },
+  {
+    el: '#loginArea',
+    text: 'That\'s the whole workflow! Log in → choose a view → Load Data once → switch views freely. Click "Skip tour" or refresh this page to try it again anytime.',
+  },
+];
+
+let tourActive = false;
+let currentStep = 0;
+
+function positionTour(step) {
+  const el = document.querySelector(step.el);
+  const rect = el.getBoundingClientRect();
+  const pad = 8;
+  const spot = document.getElementById('spotlight');
+  spot.style.left = (rect.left - pad) + 'px';
+  spot.style.top = (rect.top - pad) + 'px';
+  spot.style.width = (rect.width + pad*2) + 'px';
+  spot.style.height = (rect.height + pad*2) + 'px';
+
+  const tip = document.getElementById('tooltip');
+  let top = rect.bottom + 16;
+  let left = rect.left;
+  if (top + 160 > window.innerHeight) top = rect.top - 180;
+  if (left + 320 > window.innerWidth) left = window.innerWidth - 340;
+  tip.style.top = top + 'px';
+  tip.style.left = left + 'px';
+}
+
+function showStep(i) {
+  currentStep = i;
+  const step = steps[i];
+  document.getElementById('stepCount').textContent = 'Step ' + (i+1) + ' of ' + steps.length;
+  document.getElementById('stepText').textContent = step.text;
+  document.getElementById('nextBtn').textContent = (i === steps.length - 1) ? 'Finish' : 'Next →';
+  document.querySelector('#loginArea').scrollIntoView({ block: 'center', behavior: 'instant' });
+  document.querySelector(step.el).scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(function() { positionTour(step); }, 300);
+
+  if (step.action && !step.waitForAction) step.action();
+  if (step.action && step.waitForAction) {
+    document.getElementById('nextBtn').style.display = 'none';
+    step.action();
+  } else {
+    document.getElementById('nextBtn').style.display = 'inline-block';
+  }
+}
+
+function nextStep() {
+  if (currentStep >= steps.length - 1) { endTour(); return; }
+  showStep(currentStep + 1);
+}
+
+function startTour() {
+  tourActive = true;
+  document.getElementById('tourOverlay').style.display = 'block';
+  document.getElementById('spotlight').style.display = 'block';
+  document.getElementById('tooltip').style.display = 'block';
+  showStep(0);
+}
+
+function endTour() {
+  tourActive = false;
+  document.getElementById('tourOverlay').style.display = 'none';
+  document.getElementById('spotlight').style.display = 'none';
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+window.addEventListener('resize', function() {
+  if (tourActive) positionTour(steps[currentStep]);
+});
+</script>
+</body>
+</html>
