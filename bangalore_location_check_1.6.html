@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Installed Meters — Bangalore GPS Location Check</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background:#f5f6f8; margin:0; padding:24px; color:#1a1a1a; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { font-size:12px; color:#8a94a6; margin-bottom:20px; }
+  .cards { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:28px; }
+  .card { flex:1; min-width:180px; background:#fff; border:1px solid #e3e6ea; border-radius:10px; padding:18px; text-align:center; }
+  .card .num { font-size:26px; font-weight:700; }
+  .card .lbl { font-size:11px; color:#8a94a6; text-transform:uppercase; margin-top:6px; letter-spacing:.03em; }
+  .card.total .num { color:#185FA5; }
+  .card.flag .num { color:#c9700a; }
+  table { border-collapse:collapse; width:100%; background:#fff; border-radius:8px; overflow:hidden; }
+  th { background:#185FA5; color:#fff; text-align:left; padding:9px 12px; font-size:11px; text-transform:uppercase; }
+  td { padding:8px 12px; border-bottom:1px solid #eee; font-size:13px; }
+  td.mono { font-family: Consolas, monospace; }
+  h3 { font-size:13px; margin:20px 0 8px; color:#333; }
+  .empty { padding:16px; color:#8a94a6; font-size:13px; background:#fff; border-radius:8px; }
+  #status { font-size:13px; color:#555; margin:12px 0; white-space:pre-line; }
+  button { background:#185FA5; color:#fff; border:none; padding:10px 20px; border-radius:6px; font-size:13px; cursor:pointer; }
+  button:disabled { background:#a9b6c4; cursor:default; }
+</style>
+</head>
+<body>
+
+<h1>Installed Meters — Bangalore GPS Location Check <span style="font-size:12px;color:#8a94a6;font-weight:normal;">v1.6.0</span></h1>
+<div class="sub">Lists meters whose own "state" attribute is anything other than "INSTALLABLE" (e.g. INSTALLED, TEST COMPLETED, etc.) AND whose Latitude/Longitude attributes fall within the Bangalore area bounding box.</div>
+
+<div id="loginArea" style="background:#fff;border:1px solid #e3e6ea;border-radius:10px;padding:18px;max-width:420px;margin-bottom:16px;">
+  <div style="font-size:12px;color:#8a94a6;margin-bottom:10px;">Enter your ThingsBoard login (not saved anywhere)</div>
+  <input id="tbUser" type="text" placeholder="Username / email" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;box-sizing:border-box;">
+  <input id="tbPass" type="password" placeholder="Password" style="width:100%;padding:8px 10px;margin-bottom:14px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;box-sizing:border-box;">
+  <button id="loadBtn" onclick="loadData()">Load Data</button>
+  <div style="font-size:11px;color:#8a94a6;margin-top:6px;">
+    Bangalore bounding box used: Lat 12.70–13.20, Long 77.30–77.80 (edit BANGALORE_BOX in this file if this needs adjusting)
+  </div>
+
+  <div style="border-top:1px solid #eef0f3;margin:14px 0;"></div>
+  <div style="font-size:12px;color:#8a94a6;margin-bottom:6px;">Filter by state <span style="color:#1D9E75;">(instant — no reload needed)</span></div>
+  <select id="stateFilterSelect" onchange="applyStateFilter()" style="width:100%;padding:8px 10px;border:1px solid #d7dce2;border-radius:6px;font-size:13px;">
+    <option value="ALL_NOT_INSTALLABLE">All (State \u2260 Installable)</option>
+    <option value="INSTALLED">INSTALLED only</option>
+    <option value="TEST COMPLETED">TEST COMPLETED only</option>
+    <option value="TEST IN PROGRESS">TEST IN PROGRESS only</option>
+    <option value="INSTALLABLE">INSTALLABLE only</option>
+  </select>
+</div>
+<div id="status"></div>
+
+<div class="cards" id="cards" style="display:none;"></div>
+<div style="display:flex;justify-content:space-between;align-items:center;">
+  <h3 id="tableHeading" style="display:none;margin:20px 0 8px;"></h3>
+  <button id="downloadBtn" onclick="downloadXLS()" style="display:none;background:#1D9E75;">⬇ Download as Excel</button>
+</div>
+<div id="tableArea"></div>
+
+<script>
+const TB_BASE = 'https://schnelliot.in';
+const DEVICE_TYPE = 'semc';
+const INSTALLABLE_VAL = 'INSTALLABLE';
+const LAT_KEY = 'latitude';
+const LNG_KEY = 'longitude';
+const STATE_KEY = 'state';
+
+// Rough bounding box for Bangalore urban + outskirts — adjust if needed
+const BANGALORE_BOX = { latMin: 12.70, latMax: 13.20, lngMin: 77.30, lngMax: 77.80 };
+
+let JWT = '';
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+function authHeaders() { return { 'X-Authorization': 'Bearer ' + JWT }; }
+
+async function login() {
+  const username = document.getElementById('tbUser').value.trim();
+  const password = document.getElementById('tbPass').value;
+  if (!username || !password) throw new Error('Please enter your ThingsBoard username and password.');
+  const res = await fetch(TB_BASE + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username, password: password }),
+  });
+  if (!res.ok) throw new Error('ThingsBoard login failed (' + res.status + ')');
+  const data = await res.json();
+  JWT = data.token;
+}
+
+async function fetchAllTenantDevices(deviceType) {
+  let all = [];
+  let page = 0;
+  const pageSize = 100;
+  while (true) {
+    const res = await fetch(
+      TB_BASE + '/api/tenant/devices?type=' + encodeURIComponent(deviceType) + '&pageSize=' + pageSize + '&page=' + page,
+      { headers: authHeaders() }
+    );
+    const data = await res.json();
+    const batch = data.data || [];
+    all = all.concat(batch);
+    setStatus('Fetching all tenant ' + deviceType + ' devices... ' + all.length + ' so far');
+    if (!data.hasNext || batch.length === 0) break;
+    page++;
+    if (page > 200) { setStatus('WARNING: stopped after 200 pages as a safety limit.'); break; }
+  }
+  return all;
+}
+
+async function batchFetchAttributes(entities, keys, entityType, scope, batchSize) {
+  scope = scope || 'SERVER_SCOPE';
+  batchSize = batchSize || 20;
+  const results = {};
+  for (let i = 0; i < entities.length; i += batchSize) {
+    const batch = entities.slice(i, i + batchSize);
+    await Promise.all(batch.map(async function(ent) {
+      const id = ent.id.id;
+      try {
+        const res = await fetch(
+          TB_BASE + '/api/plugins/telemetry/' + entityType + '/' + id + '/values/attributes/' + scope + '?keys=' + keys.join(','),
+          { headers: authHeaders() }
+        );
+        const data = await res.json();
+        const attrs = {};
+        (data || []).forEach(function(a) { attrs[a.key] = a.value; });
+        results[id] = attrs;
+      } catch (e) { results[id] = {}; }
+    }));
+    setStatus('Reading ' + scope + ' attributes (' + keys.join(',') + ')... ' + Math.min(i + batchSize, entities.length) + '/' + entities.length);
+  }
+  return results;
+}
+
+function inBangaloreBox(lat, lng) {
+  if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return false;
+  return lat >= BANGALORE_BOX.latMin && lat <= BANGALORE_BOX.latMax &&
+         lng >= BANGALORE_BOX.lngMin && lng <= BANGALORE_BOX.lngMax;
+}
+
+let cachedRows = null;
+
+async function loadData() {
+  const btn = document.getElementById('loadBtn');
+  btn.disabled = true;
+  document.getElementById('cards').style.display = 'none';
+  document.getElementById('tableHeading').style.display = 'none';
+  document.getElementById('tableArea').innerHTML = '';
+
+  try {
+    setStatus('Authenticating with ThingsBoard...');
+    await login();
+
+    const allDevices = await fetchAllTenantDevices(DEVICE_TYPE);
+
+    setStatus('Reading state (server attribute) for ' + allDevices.length + ' meters...');
+    const stateMap = await batchFetchAttributes(allDevices, [STATE_KEY], 'DEVICE', 'SERVER_SCOPE');
+
+    setStatus('Reading Latitude/Longitude (client attributes) for ' + allDevices.length + ' meters...');
+    const locMap = await batchFetchAttributes(allDevices, [LAT_KEY, LNG_KEY], 'DEVICE', 'CLIENT_SCOPE');
+
+    // Build one row per device, regardless of state — filtering happens
+    // afterward, instantly, based on the dropdown selection.
+    cachedRows = allDevices.map(function(d) {
+      const state = (stateMap[d.id.id] || {})[STATE_KEY];
+      const loc = locMap[d.id.id] || {};
+      const latRaw = loc[LAT_KEY];
+      const lngRaw = loc[LNG_KEY];
+      const lat = parseFloat(latRaw);
+      const lng = parseFloat(lngRaw);
+      return {
+        uid     : d.label || '—',
+        deviceId: d.name,
+        state   : state || null,
+        lat     : (latRaw == null || latRaw === '') ? '(blank)' : latRaw,
+        lng     : (lngRaw == null || lngRaw === '') ? '(blank)' : lngRaw,
+        inBangalore: inBangaloreBox(lat, lng) ? 'Yes' : 'No',
+      };
+    });
+
+    applyStateFilter();
+    setStatus('Done — loaded at ' + new Date().toLocaleTimeString('en-IN'));
+    btn.textContent = 'Reload Data';
+  } catch (e) {
+    setStatus('ERROR: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function applyStateFilter() {
+  if (!cachedRows) {
+    setStatus('Click "Load Data" first — no data fetched yet.');
+    return;
+  }
+  const selected = document.getElementById('stateFilterSelect').value;
+
+  let filtered;
+  if (selected === 'ALL_NOT_INSTALLABLE') {
+    filtered = cachedRows.filter(function(r) { return r.state != null && r.state !== INSTALLABLE_VAL; });
+  } else {
+    filtered = cachedRows.filter(function(r) { return r.state === selected; });
+  }
+
+  renderResults(filtered.length, filtered.map(function(r) { return Object.assign({}, r, { state: r.state || '—' }); }));
+}
+
+let lastRenderedRows = null;
+
+function renderResults(totalChecked, allRows) {
+  lastRenderedRows = allRows;
+  const cardsEl = document.getElementById('cards');
+  const inBangaloreCount = allRows.filter(function(r) { return r.inBangalore === 'Yes'; }).length;
+  cardsEl.innerHTML =
+    '<div class="card total"><div class="num">' + totalChecked + '</div><div class="lbl">Total Meters (State \u2260 Installable)</div></div>' +
+    '<div class="card flag"><div class="num">' + inBangaloreCount + '</div><div class="lbl">In Bangalore GPS Area</div></div>';
+  cardsEl.style.display = 'flex';
+
+  const heading = document.getElementById('tableHeading');
+  const selectedLabel = document.getElementById('stateFilterSelect').selectedOptions[0].textContent;
+  heading.textContent = selectedLabel + ' — (' + allRows.length + ')';
+  heading.style.display = 'block';
+
+  const area = document.getElementById('tableArea');
+  const downloadBtn = document.getElementById('downloadBtn');
+  if (!allRows.length) {
+    area.innerHTML = '<div class="empty">No meters found with state other than INSTALLABLE.</div>';
+    downloadBtn.style.display = 'none';
+    return;
+  }
+  downloadBtn.style.display = 'inline-block';
+  const rows = allRows.map(function(m) {
+    const highlight = m.inBangalore === 'Yes' ? ' style="background:#fff4e5;"' : '';
+    return '<tr' + highlight + '><td class="mono">' + m.uid + '</td><td class="mono">' + m.deviceId + '</td><td>' + m.state + '</td><td>' + m.lat + '</td><td>' + m.lng + '</td><td>' + m.inBangalore + '</td></tr>';
+  }).join('');
+  area.innerHTML = '<table><tr><th>UID</th><th>Device ID</th><th>State</th><th>Latitude</th><th>Longitude</th><th>In Bangalore?</th></tr>' + rows + '</table>';
+}
+
+function downloadXLS() {
+  if (!lastRenderedRows || !lastRenderedRows.length) return;
+
+  const exportData = lastRenderedRows.map(function(r) {
+    return {
+      'UID': r.uid,
+      'Device ID': r.deviceId,
+      'State': r.state,
+      'Latitude': r.lat,
+      'Longitude': r.lng,
+      'In Bangalore?': r.inBangalore,
+    };
+  });
+
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  ws['!cols'] = [ { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 14 } ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Meters');
+
+  const dateStr = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, 'bangalore_location_check_' + dateStr + '.xlsx');
+}
+</script>
+</body>
+</html>
