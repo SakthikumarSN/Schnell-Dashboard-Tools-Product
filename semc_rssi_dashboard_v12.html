@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SEMC RSSI Signal Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;background:#f0f2f5;padding:12px;font-size:13px;color:#222;}
+h2{color:#1565c0;font-size:16px;margin-bottom:12px;text-align:center;}
+.panel{background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px;}
+.panel h3{margin-bottom:10px;color:#333;font-size:14px;}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.cfg-grid input{padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;width:100%;}
+.row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;}
+.row label{font-size:12px;color:#555;font-weight:bold;white-space:nowrap;}
+.row select{flex:1;padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;min-width:120px;}
+button{padding:8px 18px;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:bold;font-family:inherit;}
+#loginBtn{background:#1565c0;color:#fff;}
+#fetchBtn{background:#1565c0;color:#fff;}
+#fetchBtn:disabled,#loginBtn:disabled{background:#aaa;cursor:not-allowed;}
+#downloadBtn{background:#2e7d32;color:#fff;display:none;}
+#statusMsg{font-size:12px;margin-top:8px;padding:6px 10px;border-radius:4px;display:none;}
+.msg-ok{background:#e6f4ea;color:#1e7e34;border:1px solid #a8d5b5;}
+.msg-err{background:#fdecea;color:#c62828;border:1px solid #f5b8b8;}
+.msg-info{background:#e8f0fe;color:#1a73e8;border:1px solid #b0c9f5;}
+#progText{font-size:12px;color:#1565c0;margin-top:4px;font-weight:bold;min-height:16px;}
+.prog-wrap{width:100%;height:5px;background:#e0e0e0;border-radius:3px;margin-top:4px;display:none;}
+.prog-bar{height:5px;background:#1565c0;border-radius:3px;transition:width .3s;}
+
+/* Info bar */
+.info-bar{background:#e3f2fd;border:1px solid #bbdefb;border-radius:6px;padding:7px 12px;font-size:11px;color:#0d47a1;margin-bottom:10px;line-height:1.8;}
+.badge{display:inline-block;padding:1px 7px;border-radius:3px;font-weight:bold;font-size:11px;margin:0 3px;}
+
+/* Table */
+.tbl-wrap{border:1px solid #ddd;border-radius:8px;overflow:hidden;margin-bottom:12px;display:none;}
+.tbl-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;flex-wrap:wrap;gap:8px;}
+.tbl-header b{font-size:13px;}
+.tbl-scroll{overflow-x:auto;max-height:420px;overflow-y:auto;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead th{padding:7px 9px;text-align:center;position:sticky;top:0;z-index:1;white-space:nowrap;font-weight:bold;border-bottom:1px solid #ddd;}
+tbody tr:nth-child(even){background:#fafafa;}
+tbody tr:hover{background:#e8f0fe;}
+td{padding:6px 9px;border-bottom:1px solid #f0f0f0;vertical-align:middle;text-align:center;}
+td.uid-cell{text-align:left;font-weight:bold;white-space:nowrap;}
+td.dev-cell{text-align:left;color:#555;white-space:nowrap;}
+td.sim-cell{color:#1565c0;font-weight:bold;}
+
+/* RSSI cells */
+.rssi-cell{padding:4px 6px;border-radius:4px;font-size:11px;line-height:1.4;}
+.rssi-ex{background:#e8f5e9;color:#1b5e20;}
+.rssi-good{background:#fff9c4;color:#856a00;}
+.rssi-fair{background:#ffe0b2;color:#7a3a00;}
+.rssi-poor{background:#ffcdd2;color:#b71c1c;}
+.rssi-none{background:#f5f5f5;color:#9e9e9e;}
+
+/* Graph button */
+.graph-btn{padding:3px 10px;background:#e65100;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;white-space:nowrap;}
+.graph-btn:hover{background:#bf360c;}
+
+/* Chart panel */
+#chartPanel{display:none;}
+.chart-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.chart-controls select{padding:6px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;min-width:140px;}
+.chart-controls button{padding:6px 14px;background:#1565c0;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:bold;}
+.stat-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+.stat-card{background:#f5f5f5;border-radius:6px;padding:8px 14px;min-width:120px;}
+.stat-label{font-size:10px;color:#888;margin-bottom:2px;}
+.stat-value{font-size:16px;font-weight:bold;}
+.legend-row{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#555;margin-bottom:8px;}
+.leg-item{display:flex;align-items:center;gap:5px;}
+.leg-dot{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<h2>SEMC RSSI Signal Dashboard</h2>
+
+<!-- STEP 1 LOGIN -->
+<div class="panel">
+  <h3>Step 1 — ThingsBoard Login</h3>
+  <div class="cfg-grid">
+    <input id="tbUrl" value="https://schnelliot.in" placeholder="ThingsBoard URL">
+    <input id="tbUser" placeholder="Enter User ID">
+    <input id="tbPass" type="password" placeholder="Enter Password">
+  </div>
+  <div class="row" style="margin-top:10px;">
+    <button id="loginBtn" onclick="doLogin()">Login</button>
+  </div>
+  <div id="statusMsg"></div>
+  <div id="loader">
+    <div id="progText"></div>
+    <div class="prog-wrap" id="progWrap"><div class="prog-bar" id="progBar" style="width:0%"></div></div>
+  </div>
+</div>
+
+<!-- STEP 2 -->
+<div class="panel" id="selPanel" style="display:none">
+  <h3>Step 2 — Select Mode &amp; Fetch</h3>
+
+  <!-- Mode tabs -->
+  <div style="display:flex;gap:6px;margin-bottom:14px;">
+    <button id="modeUIDBtn" onclick="setMode('uid')"
+      style="padding:6px 18px;border-radius:5px;border:2px solid #e65100;background:#e65100;color:#fff;font-size:12px;font-weight:bold;cursor:pointer;">
+      &#128269; UID Search
+    </button>
+    <button id="modeBulkBtn" onclick="setMode('bulk')"
+      style="padding:6px 18px;border-radius:5px;border:2px solid #ccc;background:#fff;color:#555;font-size:12px;font-weight:bold;cursor:pointer;">
+      &#128200; Bulk Fetch (Ward-wise)
+    </button>
+  </div>
+
+  <!-- UID MODE -->
+  <div id="uidMode">
+    <div style="background:#e3f2fd;border:1px solid #bbdefb;border-radius:6px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:#0d47a1;">
+      &#9432; Enter one or more UIDs (comma or newline separated). Device is searched directly by label — no customer selection needed.
+    </div>
+    <div class="row" style="align-items:flex-start;">
+      <label style="margin-top:8px;white-space:nowrap;">UID(s):</label>
+      <textarea id="uidInput" rows="3" placeholder="e.g. SSC107SM00113&#10;SSC107SM00447, SSC107SM00083"
+        style="flex:1;padding:8px 10px;border:1px solid #ccc;border-radius:5px;font-size:13px;resize:vertical;min-width:200px;"></textarea>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button id="uidFetchBtn" onclick="fetchByUID(false)"
+        style="padding:8px 20px;background:#e65100;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:bold;">
+        &#128202; Fetch — Full History
+      </button>
+      <button id="uidFetch7Btn" onclick="fetchByUID(true)"
+        style="padding:8px 20px;background:#1565c0;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:bold;">
+        &#128202; Fetch — Last 7 Days
+      </button>
+      <button id="downloadBtn" onclick="downloadExcel()"
+        style="padding:8px 20px;background:#2e7d32;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:bold;display:none;">
+        &#8595; Download Excel
+      </button>
+    </div>
+    <div style="font-size:11px;color:#888;margin-top:6px;">Full History = from installed date. Last 7 Days = quick check.</div>
+  </div>
+
+  <!-- BULK MODE -->
+  <div id="bulkMode" style="display:none;">
+    <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:#1b5e20;">
+      &#9432; Select customer — region/zone/ward filters appear after devices load. Last 7 days only in bulk mode.
+    </div>
+
+    <!-- Customer row — always visible -->
+    <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <label style="font-size:11px;color:#555;font-weight:bold;">Customer</label>
+        <select id="bulkCustomer" onchange="onBulkCustomerChange()"
+          style="padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;min-width:200px;">
+          <option value="">-- Select Customer --</option>
+        </select>
+      </div>
+      <div id="bulkLoadingMsg" style="font-size:12px;color:#1565c0;padding-bottom:8px;display:none;">
+        <span style="display:inline-block;width:12px;height:12px;border:2px solid #ccc;border-top-color:#1565c0;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:5px;"></span>
+        Loading devices...
+      </div>
+    </div>
+
+    <!-- Region/Zone/Ward — hidden until devices loaded -->
+    <div id="bulkFiltersRow" style="display:none;margin-top:12px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <label style="font-size:11px;color:#555;font-weight:bold;">Region</label>
+          <select id="bulkRegion" onchange="onBulkRegionChange()"
+            style="padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;min-width:130px;">
+            <option value="">All Regions</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <label style="font-size:11px;color:#555;font-weight:bold;">Zone</label>
+          <select id="bulkZone" onchange="onBulkZoneChange()"
+            style="padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;min-width:130px;">
+            <option value="">All Zones</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <label style="font-size:11px;color:#555;font-weight:bold;">Ward</label>
+          <select id="bulkWard" onchange="updateBulkCount()"
+            style="padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;min-width:130px;">
+            <option value="">All Wards</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Device count + limit row — shown after filter selection -->
+      <div id="bulkCountRow" style="margin-top:12px;padding:10px 14px;background:#f5f5f5;border-radius:6px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div id="bulkDeviceCount" style="font-size:13px;font-weight:bold;color:#1565c0;"></div>
+        <!-- Limit input — only shown if > 100 devices -->
+        <div id="bulkLimitWrap" style="display:none;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:#e65100;font-weight:bold;">&#9888; &gt;100 devices — enter limit:</span>
+          <input type="number" id="bulkMaxDevices" value="100" min="1" max="100"
+            onchange="updateBulkCount()" oninput="updateBulkCount()"
+            style="padding:6px 10px;border:2px solid #e65100;border-radius:5px;font-size:13px;width:80px;font-weight:bold;">
+        </div>
+      </div>
+
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="bulkFetchBtn" onclick="startBulkFetch()"
+          style="padding:8px 20px;background:#1565c0;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:bold;">
+          &#128200; Fetch RSSI — Last 7 Days
+        </button>
+        <button id="downloadBtn2" onclick="downloadExcel()"
+          style="padding:8px 20px;background:#2e7d32;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:bold;display:none;">
+          &#8595; Download Excel
+        </button>
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">If devices &gt; 100 an editable limit field appears. Otherwise all matching devices are fetched.</div>
+    </div>
+  </div>
+</div>
+
+<!-- INFO BAR -->
+<div class="info-bar" id="infoBar" style="display:none">
+  <b>GSM Signal Quality (AT+CSQ) — Formula: dBm = (index × 2) − 113</b> &nbsp;
+  <span class="badge" style="background:#e8f5e9;color:#1b5e20;">20–31 (≥−73 dBm): Excellent</span>
+  <span class="badge" style="background:#fff9c4;color:#856a00;">15–19: Good</span>
+  <span class="badge" style="background:#ffe0b2;color:#7a3a00;">10–14: Fair</span>
+  <span class="badge" style="background:#ffcdd2;color:#b71c1c;">1–9: Poor</span>
+  <span class="badge" style="background:#f5f5f5;color:#9e9e9e;">0/99: No Signal</span>
+</div>
+
+<!-- RSSI TABLE -->
+<div class="tbl-wrap" id="rssiTableWrap">
+  <div class="tbl-header" style="background:#1565c0;color:#fff;">
+    <b id="tableTitle">RSSI Min / Max per Panel per Day</b>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input id="tableSearch" placeholder="Search UID / device..." oninput="renderTable()"
+        style="padding:5px 10px;border:none;border-radius:4px;font-size:12px;width:180px;color:#333;">
+    </div>
+  </div>
+  <div class="tbl-scroll">
+    <table>
+      <thead id="rssiTHead"></thead>
+      <tbody id="rssiTBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CHART PANEL -->
+<div class="panel" id="chartPanel">
+  <h3 id="chartTitle">Time-series RSSI Chart</h3>
+  <div class="chart-controls">
+    <label style="font-size:12px;color:#555;font-weight:bold;">Date:</label>
+    <select id="chartDateSel" onchange="loadChart()"></select>
+    <button onclick="loadChart()">&#8635; Reload</button>
+    <span id="chartLoading" style="font-size:12px;color:#1565c0;display:none;">Loading...</span>
+  </div>
+  <div class="legend-row">
+    <span class="leg-item"><span class="leg-dot" style="background:#1565c0;"></span>RSSI index (0–31)</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#e65100;border-radius:50%;"></span>Min point</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#2e7d32;border-radius:50%;"></span>Max point</span>
+  </div>
+  <div style="position:relative;width:100%;height:300px;">
+    <canvas id="rssiChart" role="img" aria-label="RSSI time-series chart">RSSI signal strength over time.</canvas>
+  </div>
+  <div class="stat-row" id="chartStats"></div>
+</div>
+
+<script>
+var tbToken='', tbUrl='';
+var allDevices=[];
+var allPanels=[];
+var chartInstance=null;
+var selectedPanel=null;
+
+function showStatus(msg,type){
+  var el=document.getElementById('statusMsg');
+  el.className='msg-'+type; el.innerText=msg; el.style.display='block';
+}
+function setProgress(msg,pct){
+  document.getElementById('progText').innerText=msg;
+  document.getElementById('loader').style.display='block';
+  if(pct!==undefined){
+    document.getElementById('progWrap').style.display='block';
+    document.getElementById('progBar').style.width=pct+'%';
+  }
+}
+
+function toDbm(idx){if(idx===99||idx===0)return null;return (idx*2)-113;}
+function rssiClass(idx){
+  if(idx===99||idx===0)return 'rssi-none';
+  if(idx>=20)return 'rssi-ex';
+  if(idx>=15)return 'rssi-good';
+  if(idx>=10)return 'rssi-fair';
+  return 'rssi-poor';
+}
+function rssiQuality(idx){
+  if(idx===99||idx===0)return 'No Signal';
+  if(idx>=20)return 'Excellent';
+  if(idx>=15)return 'Good';
+  if(idx>=10)return 'Fair';
+  return 'Poor';
+}
+
+async function doLogin(){
+  tbUrl=document.getElementById('tbUrl').value.trim().replace(/\/$/,'');
+  var user=document.getElementById('tbUser').value.trim();
+  var pass=document.getElementById('tbPass').value.trim();
+  if(!tbUrl||!user||!pass){showStatus('Please fill all fields.','err');return;}
+  document.getElementById('loginBtn').disabled=true;
+  showStatus('Logging in...','info');
+  try{
+    var res=await fetch(tbUrl+'/api/auth/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:user,password:pass})
+    });
+    if(!res.ok)throw new Error('Login failed ('+res.status+'). Check credentials.');
+    tbToken=(await res.json()).token;
+    showStatus('Login successful! Enter UID(s) below and fetch data.','ok');
+    document.getElementById('selPanel').style.display='block';
+  }catch(e){
+    showStatus('Error: '+e.message,'err');
+    document.getElementById('loginBtn').disabled=false;
+  }
+}
+
+async function fetchAttrs(deviceId){
+  try{
+    var res=await fetch(tbUrl+'/api/plugins/telemetry/DEVICE/'+deviceId+'/values/attributes/SERVER_SCOPE',
+      {headers:{Authorization:'Bearer '+tbToken}});
+    if(!res.ok)return{};
+    var arr=await res.json(); var obj={};
+    arr.forEach(function(a){obj[a.key]=a.value;}); return obj;
+  }catch(e){return{};}
+}
+
+async function fetchClientAttrs(deviceId){
+  try{
+    var res=await fetch(tbUrl+'/api/plugins/telemetry/DEVICE/'+deviceId+'/values/attributes/CLIENT_SCOPE',
+      {headers:{Authorization:'Bearer '+tbToken}});
+    if(!res.ok)return{};
+    var arr=await res.json(); var obj={};
+    arr.forEach(function(a){obj[a.key]=a.value;}); return obj;
+  }catch(e){return{};}
+}
+
+
+
+
+// ── MODE TOGGLE ──────────────────────────────────────────────────────────────
+function setMode(mode){
+  document.getElementById('uidMode').style.display=mode==='uid'?'block':'none';
+  document.getElementById('bulkMode').style.display=mode==='bulk'?'block':'none';
+  document.getElementById('modeUIDBtn').style.background=mode==='uid'?'#e65100':'#fff';
+  document.getElementById('modeUIDBtn').style.color=mode==='uid'?'#fff':'#555';
+  document.getElementById('modeUIDBtn').style.borderColor=mode==='uid'?'#e65100':'#ccc';
+  document.getElementById('modeBulkBtn').style.background=mode==='bulk'?'#1565c0':'#fff';
+  document.getElementById('modeBulkBtn').style.color=mode==='bulk'?'#fff':'#555';
+  document.getElementById('modeBulkBtn').style.borderColor=mode==='bulk'?'#1565c0':'#ccc';
+}
+
+// ── BULK MODE — customer/region/zone/ward ─────────────────────────────────────
+var bulkDevices=[];
+var bulkZoneMap={};
+var bulkWardMap={};
+
+async function onBulkCustomerChange(){
+  var custId=document.getElementById('bulkCustomer').value;
+  document.getElementById('bulkFiltersRow').style.display='none';
+  document.getElementById('bulkLoadingMsg').style.display='none';
+  document.getElementById('bulkDeviceCount').innerText='';
+  bulkDevices=[];
+  clearResults();
+  ['bulkRegion','bulkZone','bulkWard'].forEach(function(id){
+    var el=document.getElementById(id);
+    el.innerHTML='<option value="">All '+(id==='bulkRegion'?'Regions':id==='bulkZone'?'Zones':'Wards')+'</option>';
+  });
+  if(!custId)return;
+  // Show loading spinner, hide filters
+  document.getElementById('bulkLoadingMsg').style.display='block';
+  document.getElementById('bulkLoadingMsg').innerText='Loading SEMC devices...';
+  setProgress('Loading SEMC devices for customer...');
+  try{
+    var all=[]; var page=0; var hasMore=true;
+    while(hasMore){
+      var res=await fetch(tbUrl+'/api/customer/'+custId+'/devices?pageSize=100&page='+page,
+        {headers:{Authorization:'Bearer '+tbToken}});
+      if(!res.ok)break;
+      var d=await res.json();
+      var semc=(d.data||[]).filter(function(dv){
+        return (dv.type||'').toLowerCase()==='semc';
+      });
+      all=all.concat(semc);
+      hasMore=d.hasNext||false; page++;
+      setProgress('Loading devices... '+all.length+' SEMC found');
+      if(all.length>=5000)break;
+    }
+    // Fetch attrs in batches of 20
+    for(var i=0;i<all.length;i+=20){
+      var batch=all.slice(i,i+20);
+      var attrs=await Promise.all(batch.map(function(d){return fetchAttrs(d.id.id);}));
+      batch.forEach(function(d,idx){d._attrs=attrs[idx];});
+      setProgress('Reading attributes: '+(i+batch.length)+'/'+all.length);
+    }
+    bulkDevices=all;
+    // Build region/zone/ward dropdowns
+    bulkZoneMap={}; bulkWardMap={};
+    var regions=new Set();
+    all.forEach(function(d){
+      var a=d._attrs||{};
+      if(a.region){
+        regions.add(a.region);
+        if(a.zoneName){
+          if(!bulkZoneMap[a.region])bulkZoneMap[a.region]=new Set();
+          bulkZoneMap[a.region].add(a.zoneName);
+          if(a.wardName){
+            var key=a.region+'||'+a.zoneName;
+            if(!bulkWardMap[key])bulkWardMap[key]=new Set();
+            bulkWardMap[key].add(a.wardName);
+          }
+        }
+      }
+    });
+    var selR=document.getElementById('bulkRegion');
+    Array.from(regions).sort().forEach(function(r){selR.add(new Option(r,r));});
+    updateBulkCount();
+    // Show filters, hide loading
+    document.getElementById('bulkLoadingMsg').style.display='none';
+    document.getElementById('bulkFiltersRow').style.display='block';
+    updateBulkCount();
+    setProgress('Ready: '+all.length+' SEMC devices loaded.',100);
+  }catch(e){
+    setProgress('Error: '+e.message);
+    document.getElementById('bulkLoadingMsg').style.display='none';
+  }
+}
+
+function onBulkRegionChange(){
+  var r=document.getElementById('bulkRegion').value;
+  var selZ=document.getElementById('bulkZone');
+  selZ.innerHTML='<option value="">All Zones</option>';
+  var zones=r&&bulkZoneMap[r]?Array.from(bulkZoneMap[r]):
+    Array.from(new Set(Object.values(bulkZoneMap).reduce(function(a,s){s.forEach(function(z){a.push(z);});return a;},[])));
+  zones.sort().forEach(function(z){selZ.add(new Option(z,z));});
+  document.getElementById('bulkWard').innerHTML='<option value="">All Wards</option>';
+  updateBulkCount();
+}
+
+function onBulkZoneChange(){
+  var r=document.getElementById('bulkRegion').value;
+  var z=document.getElementById('bulkZone').value;
+  var selW=document.getElementById('bulkWard');
+  selW.innerHTML='<option value="">All Wards</option>';
+  var key=r+'||'+z;
+  var wards=bulkWardMap[key]?Array.from(bulkWardMap[key]):
+    Array.from(new Set(Object.values(bulkWardMap).reduce(function(a,s){s.forEach(function(w){a.push(w);});return a;},[])));
+  wards.sort().forEach(function(w){selW.add(new Option(w,w));});
+  updateBulkCount();
+}
+
+function updateBulkCount(){
+  var fr=document.getElementById('bulkRegion').value;
+  var fz=document.getElementById('bulkZone').value;
+  var fw=document.getElementById('bulkWard').value;
+  var filtered=bulkDevices.filter(function(d){
+    var a=d._attrs||{};
+    if(fr&&a.region!==fr)return false;
+    if(fz&&a.zoneName!==fz)return false;
+    if(fw&&a.wardName!==fw)return false;
+    return true;
+  });
+  var total=filtered.length;
+  var limitWrap=document.getElementById('bulkLimitWrap');
+  var countEl=document.getElementById('bulkDeviceCount');
+
+  if(total>100){
+    // Show limit input
+    limitWrap.style.display='flex';
+    var max=Math.min(100,Math.max(1,parseInt(document.getElementById('bulkMaxDevices').value)||100));
+    countEl.innerText='Matching: '+total+' devices — will fetch: '+max;
+    countEl.style.color='#e65100';
+  } else {
+    // Hide limit input — fetch all
+    limitWrap.style.display='none';
+    countEl.innerText='Matching: '+total+' devices — will fetch all '+total;
+    countEl.style.color='#1565c0';
+  }
+}
+
+async function startBulkFetch(){
+  var fr=document.getElementById('bulkRegion').value;
+  var fz=document.getElementById('bulkZone').value;
+  var fw=document.getElementById('bulkWard').value;
+
+  var filtered=bulkDevices.filter(function(d){
+    var a=d._attrs||{};
+    if(fr&&a.region!==fr)return false;
+    if(fz&&a.zoneName!==fz)return false;
+    if(fw&&a.wardName!==fw)return false;
+    return true;
+  });
+
+  // Apply limit only if > 100 devices
+  if(filtered.length>100){
+    var max=Math.min(100,Math.max(1,parseInt(document.getElementById('bulkMaxDevices').value)||100));
+    filtered=filtered.slice(0,max);
+  }
+
+  if(!filtered.length){alert('No devices match selected filters.');return;}
+
+  document.getElementById('bulkFetchBtn').disabled=true;
+  clearResults();
+  allPanels=[];
+  var now=new Date(); now.setHours(23,59,59,999);
+  var toTs=now.getTime();
+  var fromTs=toTs-7*24*3600000;
+
+  for(var i=0;i<filtered.length;i++){
+    var dev=filtered[i];
+    var id=dev.id.id;
+    var a=dev._attrs||{};
+    setProgress('Fetching RSSI '+(i+1)+'/'+filtered.length+': '+(dev.label||dev.name),
+      Math.round((i/filtered.length)*95));
+
+    // Get simName from client attrs
+    if(!dev._cattrs) dev._cattrs=await fetchClientAttrs(id);
+    var ca=dev._cattrs||{};
+
+    var installedOnRaw=a.installedOn||null;
+    var installedOnStr=installedOnRaw
+      ?new Date(installedOnRaw).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+
+    // Fetch rssi last 7 days
+    var rssiAll=[]; var curEnd=toTs; var done=false;
+    while(!done){
+      try{
+        var rs=await fetch(
+          tbUrl+'/api/plugins/telemetry/DEVICE/'+id+
+          '/values/timeseries?keys=rssi&startTs='+fromTs+'&endTs='+curEnd+'&limit=5000&agg=NONE&orderBy=DESC',
+          {headers:{Authorization:'Bearer '+tbToken}});
+        if(!rs.ok){done=true;break;}
+        var ds=await rs.json(); var chunk=ds.rssi||[];
+        rssiAll=rssiAll.concat(chunk);
+        if(chunk.length<5000){done=true;}
+        else{curEnd=chunk[chunk.length-1].ts-1;if(curEnd<=fromTs)done=true;}
+      }catch(e){done=true;}
+    }
+
+    var daysRSSI={};
+    rssiAll.forEach(function(r){
+      var v=Number(r.value); if(v===99)return;
+      var dk=new Date(r.ts).toISOString().slice(0,10);
+      if(!daysRSSI[dk])daysRSSI[dk]={min:v,max:v,minTs:r.ts,maxTs:r.ts};
+      else{
+        if(v<daysRSSI[dk].min){daysRSSI[dk].min=v;daysRSSI[dk].minTs=r.ts;}
+        if(v>daysRSSI[dk].max){daysRSSI[dk].max=v;daysRSSI[dk].maxTs=r.ts;}
+      }
+    });
+
+    allPanels.push({
+      uid:(dev.label||'').trim()||(a.UID||a.uid||dev.name),
+      name:dev.name, simName:ca.simName||'Unknown',
+      region:a.region||'—', zone:a.zoneName||'—', ward:a.wardName||'—',
+      installedOn:installedOnStr, installedOnRaw:installedOnRaw,
+      daysRSSI:daysRSSI, _deviceId:id, _fullFetched:false
+    });
+  }
+
+  document.getElementById('infoBar').style.display='block';
+  document.getElementById('rssiTableWrap').style.display='block';
+  document.getElementById('downloadBtn2').style.display='inline-block';
+  renderTable();
+  document.getElementById('bulkFetchBtn').disabled=false;
+  setProgress('Done. '+allPanels.length+' devices loaded.',100);
+}
+
+// Load customers when bulk mode is first opened
+async function loadBulkCustomers(){
+  if(document.getElementById('bulkCustomer').options.length>1)return; // already loaded
+  try{
+    var res=await fetch(tbUrl+'/api/customers?pageSize=200&page=0',
+      {headers:{Authorization:'Bearer '+tbToken}});
+    if(!res.ok)return;
+    var d=await res.json();
+    var sel=document.getElementById('bulkCustomer');
+    (d.data||[]).sort(function(a,b){return a.title.localeCompare(b.title);})
+      .forEach(function(c){sel.add(new Option(c.title,c.id.id));});
+  }catch(e){}
+}
+
+// Override setMode to also load customers
+var _origSetMode=null;
+function clearResults(){
+  allPanels=[];
+  // Hide result sections
+  document.getElementById('infoBar').style.display='none';
+  document.getElementById('rssiTableWrap').style.display='none';
+  document.getElementById('chartPanel').style.display='none';
+  // Clear table contents
+  document.getElementById('rssiTHead').innerHTML='';
+  document.getElementById('rssiTBody').innerHTML='';
+  // Hide download buttons
+  document.getElementById('downloadBtn').style.display='none';
+  if(document.getElementById('downloadBtn2'))
+    document.getElementById('downloadBtn2').style.display='none';
+  // Destroy chart if exists
+  if(chartInstance){chartInstance.destroy();chartInstance=null;}
+  selectedPanel=null;
+  // Clear progress
+  document.getElementById('progText').innerText='';
+  document.getElementById('progWrap').style.display='none';
+  document.getElementById('progBar').style.width='0%';
+}
+
+function setMode(mode){
+  document.getElementById('uidMode').style.display=mode==='uid'?'block':'none';
+  document.getElementById('bulkMode').style.display=mode==='bulk'?'block':'none';
+  document.getElementById('modeUIDBtn').style.background=mode==='uid'?'#e65100':'#fff';
+  document.getElementById('modeUIDBtn').style.color=mode==='uid'?'#fff':'#555';
+  document.getElementById('modeUIDBtn').style.borderColor=mode==='uid'?'#e65100':'#ccc';
+  document.getElementById('modeBulkBtn').style.background=mode==='bulk'?'#1565c0':'#fff';
+  document.getElementById('modeBulkBtn').style.color=mode==='bulk'?'#fff':'#555';
+  document.getElementById('modeBulkBtn').style.borderColor=mode==='bulk'?'#1565c0':'#ccc';
+  clearResults();
+  if(mode==='bulk') loadBulkCustomers();
+}
+
+async function fetchByUID(sevenDaysOnly){
+  var raw=document.getElementById('uidInput').value.trim();
+  if(!raw){alert('Please enter at least one UID.');return;}
+  var uids=raw.split(/[\n,]+/).map(function(u){return u.trim();}).filter(Boolean);
+  if(!uids.length){alert('No valid UIDs found.');return;}
+
+  document.getElementById('uidFetchBtn').disabled=true;
+  document.getElementById('uidFetch7Btn').disabled=true;
+  clearResults();
+  allPanels=[];
+
+  var now=new Date(); now.setHours(23,59,59,999);
+  var toTs=now.getTime();
+
+  for(var ui=0;ui<uids.length;ui++){
+    var uid=uids[ui];
+    setProgress('Searching for UID: '+uid+' ('+(ui+1)+'/'+uids.length+')...',Math.round((ui/uids.length)*20));
+
+    // Search strategy:
+    // 1. Try textSearch by label (fastest — ThingsBoard searches label field)
+    // 2. Full page scan as fallback matching label/UID attr/name
+    var dev=null;
+    try{
+      // Strategy 1: direct label text search
+      setProgress('Searching for UID: '+uid+'...');
+      var s1=await fetch(
+        tbUrl+'/api/tenant/devices?pageSize=100&page=0&textSearch='+encodeURIComponent(uid),
+        {headers:{Authorization:'Bearer '+tbToken}});
+      if(s1.ok){
+        var d1=await s1.json();
+        var matches=(d1.data||[]); // no profile filter — match by label/name/attr
+        for(var mi=0;mi<matches.length;mi++){
+          var lbl=(matches[mi].label||'').trim();
+          var nm=matches[mi].name||'';
+          if(lbl===uid||nm===uid){
+            dev=matches[mi];
+            dev._attrs=await fetchAttrs(dev.id.id);
+            dev._cattrs=await fetchClientAttrs(dev.id.id);
+            break;
+          }
+          // Also check server attr UID
+          if(!dev){
+            var at=await fetchAttrs(matches[mi].id.id);
+            matches[mi]._attrs=at;
+            if((at.UID||at.uid||'')===uid){
+              dev=matches[mi];
+              dev._cattrs=await fetchClientAttrs(dev.id.id);
+              break;
+            }
+          }
+        }
+      }
+    }catch(e){}
+
+    // Strategy 2: full page scan if not found
+    if(!dev){
+      try{
+        var page=0; var hasMore=true;
+        setProgress('Full scan for UID: '+uid+'...');
+        outer: while(hasMore){
+          var sr=await fetch(
+            tbUrl+'/api/tenant/devices?pageSize=100&page='+page,
+            {headers:{Authorization:'Bearer '+tbToken}});
+          if(!sr.ok)break;
+          var sd=await sr.json();
+          var semc=sd.data||[];
+          setProgress('Scanning page '+(page+1)+' ('+semc.length+' devices) for: '+uid);
+          for(var bi=0;bi<semc.length;bi+=10){
+            var batch=semc.slice(bi,bi+10);
+            var bAttrs=await Promise.all(batch.map(function(d){return fetchAttrs(d.id.id);}));
+            for(var bj=0;bj<batch.length;bj++){
+              batch[bj]._attrs=bAttrs[bj];
+              var lbl2=(batch[bj].label||'').trim();
+              var at2=bAttrs[bj];
+              if(lbl2===uid||(at2.UID||at2.uid||'')===uid||batch[bj].name===uid){
+                dev=batch[bj];
+                dev._cattrs=await fetchClientAttrs(dev.id.id);
+                break outer;
+              }
+            }
+          }
+          hasMore=sd.hasNext||false; page++;
+          if(page>100)break;
+        }
+      }catch(e2){setProgress('Scan error: '+e2.message);}
+    }
+
+    if(!dev){
+      setProgress('UID not found: '+uid+' — skipping.');
+      continue;
+    }
+
+    var a=dev._attrs||{}; var ca=dev._cattrs||{};
+    var simName=ca.simName||'Unknown';
+    var installedOnRaw=a.installedOn||null;
+    var installedOnStr=installedOnRaw
+      ?new Date(installedOnRaw).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+
+    var fromTs=sevenDaysOnly
+      ?(toTs-7*24*3600000)
+      :(installedOnRaw?new Date(installedOnRaw).setHours(0,0,0,0):(toTs-30*24*3600000));
+
+    var days=Math.ceil((toTs-fromTs)/86400000);
+    setProgress('Fetching RSSI for '+uid+' (~'+days+' days)...',20+Math.round((ui/uids.length)*75));
+
+    // Fetch rssi with pagination
+    var rssiAll=[]; var curEnd=toTs; var done=false;
+    while(!done){
+      try{
+        var rs=await fetch(
+          tbUrl+'/api/plugins/telemetry/DEVICE/'+dev.id.id+
+          '/values/timeseries?keys=rssi&startTs='+fromTs+'&endTs='+curEnd+'&limit=5000&agg=NONE&orderBy=DESC',
+          {headers:{Authorization:'Bearer '+tbToken}});
+        if(!rs.ok){done=true;break;}
+        var ds=await rs.json(); var chunk=ds.rssi||[];
+        rssiAll=rssiAll.concat(chunk);
+        setProgress('UID '+uid+': '+rssiAll.length+' readings fetched...');
+        if(chunk.length<5000){done=true;}
+        else{curEnd=chunk[chunk.length-1].ts-1;if(curEnd<=fromTs)done=true;}
+      }catch(e){done=true;}
+    }
+
+    // Build day-wise min/max
+    var daysRSSI={};
+    rssiAll.forEach(function(r){
+      var v=Number(r.value); if(v===99)return;
+      var dk=new Date(r.ts).toISOString().slice(0,10);
+      if(!daysRSSI[dk])daysRSSI[dk]={min:v,max:v,minTs:r.ts,maxTs:r.ts};
+      else{
+        if(v<daysRSSI[dk].min){daysRSSI[dk].min=v;daysRSSI[dk].minTs=r.ts;}
+        if(v>daysRSSI[dk].max){daysRSSI[dk].max=v;daysRSSI[dk].maxTs=r.ts;}
+      }
+    });
+
+    var displayUID = (dev.label||'').trim() || (a.UID||a.uid||dev.name);
+    allPanels.push({
+      uid:displayUID, name:dev.name, simName:simName,
+      region:a.region||'—', zone:a.zoneName||'—', ward:a.wardName||'—',
+      installedOn:installedOnStr, installedOnRaw:installedOnRaw,
+      daysRSSI:daysRSSI, _deviceId:dev.id.id,
+      _fullFetched:!sevenDaysOnly
+    });
+    setProgress('Loaded '+uid+': '+Object.keys(daysRSSI).length+' days of RSSI data.',
+      20+Math.round(((ui+1)/uids.length)*75));
+  }
+
+  document.getElementById('infoBar').style.display='block';
+  document.getElementById('rssiTableWrap').style.display='block';
+  if(allPanels.length){
+    document.getElementById('downloadBtn').style.display='inline-block';
+  }
+  renderTable();
+  document.getElementById('uidFetchBtn').disabled=false;
+  document.getElementById('uidFetch7Btn').disabled=false;
+  setProgress(allPanels.length+' of '+uids.length+' UIDs loaded successfully.',100);
+}
+
+// MAIN FETCH
+async function startFetch(){
+  var selR=document.getElementById('selRegion').value;
+  var selZ=document.getElementById('selZone').value;
+  var selW=document.getElementById('selWard').value;
+  if(!allDevices.length){showStatus('Please select a customer first.','err');return;}
+
+  var devices=allDevices.filter(function(dev){
+    var a=dev._attrs||{};
+    if(selR!=='ALL'&&a.region!==selR)return false;
+    if(selZ!=='ALL'&&a.zoneName!==selZ)return false;
+    if(selW!=='ALL'&&a.wardName!==selW)return false;
+    return true;
+  });
+
+  document.getElementById('fetchBtn').disabled=true;
+  allPanels=[];
+  var now=new Date(); now.setHours(23,59,59,999);
+  var toTs=now.getTime();
+  var fromTs=toTs-7*24*3600000;
+
+  setProgress('Fetching RSSI for '+devices.length+' devices...',36);
+
+  for(var i=0;i<devices.length;i++){
+    var dev=devices[i]; var id=dev.id.id;
+    var pct=36+Math.round((i/devices.length)*62);
+    setProgress('RSSI '+(i+1)+'/'+devices.length+': '+dev.name,pct);
+
+    var a=dev._attrs||{};
+    var ca=dev._cattrs||{};
+    var simName=ca.simName||'Unknown';
+    var region=a.region||'—';
+    var zone=a.zoneName||'—';
+    var ward=a.wardName||'—';
+    var installedOn=a.installedOn?new Date(a.installedOn).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+    var installedOnRaw=a.installedOn||null;
+
+    // Fetch rssi telemetry last 7 days
+    var rssiAll=[]; var curEnd=toTs; var done=false;
+    while(!done){
+      try{
+        var rs=await fetch(
+          tbUrl+'/api/plugins/telemetry/DEVICE/'+id+
+          '/values/timeseries?keys=rssi&startTs='+fromTs+'&endTs='+curEnd+'&limit=5000&agg=NONE&orderBy=DESC',
+          {headers:{Authorization:'Bearer '+tbToken}});
+        if(!rs.ok){done=true;break;}
+        var ds=await rs.json(); var chunk=ds.rssi||[];
+        rssiAll=rssiAll.concat(chunk);
+        if(chunk.length<5000){done=true;}
+        else{curEnd=chunk[chunk.length-1].ts-1;if(curEnd<=fromTs)done=true;}
+      }catch(e){done=true;}
+    }
+
+    // Build day-wise min/max
+    var daysRSSI={};  // {dateKey:{min,max,minTs,maxTs}}
+    rssiAll.forEach(function(r){
+      var v=Number(r.value);
+      if(v===99)return; // skip unknown
+      var dk=new Date(r.ts).toISOString().slice(0,10);
+      if(!daysRSSI[dk])daysRSSI[dk]={min:v,max:v,minTs:r.ts,maxTs:r.ts};
+      else{
+        if(v<daysRSSI[dk].min){daysRSSI[dk].min=v;daysRSSI[dk].minTs=r.ts;}
+        if(v>daysRSSI[dk].max){daysRSSI[dk].max=v;daysRSSI[dk].maxTs=r.ts;}
+      }
+    });
+
+    allPanels.push({
+      uid:a.UID||a.uid||dev.name,
+      name:dev.name, simName:simName,
+      region:region, zone:zone, ward:ward,
+      installedOn:installedOn, installedOnRaw:installedOnRaw,
+      daysRSSI:daysRSSI, _deviceId:id, _fullFetched:false
+    });
+  }
+
+  document.getElementById('infoBar').style.display='block';
+  document.getElementById('rssiTableWrap').style.display='block';
+  document.getElementById('downloadBtn').style.display='inline-block';
+  renderTable();
+  document.getElementById('fetchBtn').disabled=false;
+  setProgress('Done. '+allPanels.length+' panels loaded.',100);
+}
+
+// RENDER TABLE
+function renderTable(){
+  var q=(document.getElementById('tableSearch').value||'').toLowerCase();
+  var panels=allPanels.filter(function(p){
+    return !q||(p.uid.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||
+      p.simName.toLowerCase().includes(q)||p.region.toLowerCase().includes(q));
+  });
+
+  var allDates=new Set();
+  panels.forEach(function(p){Object.keys(p.daysRSSI).forEach(function(d){allDates.add(d);});});
+  var sortedDates=Array.from(allDates).sort().reverse();
+
+  document.getElementById('tableTitle').innerText='RSSI Min / Max — '+panels.length+' Panels, Last 7 Days';
+
+  var thead=document.getElementById('rssiTHead');
+  var tbody=document.getElementById('rssiTBody');
+
+  if(!sortedDates.length||!panels.length){
+    thead.innerHTML=''; tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px">No RSSI data</td></tr>';
+    return;
+  }
+
+  // Header row 1
+  var th='<tr style="background:#1565c0;color:#000;">'
+    +'<th style="min-width:120px;color:#fff;text-align:left">UID</th>'
+    +'<th style="min-width:130px;color:#fff;text-align:left">Device</th>'
+    +'<th style="min-width:80px;color:#fff">SIM</th>';
+  sortedDates.forEach(function(d){
+    th+='<th colspan="2" style="border-left:2px solid rgba(255,255,255,.4);color:#fff;font-weight:bold">'
+      +new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+'</th>';
+  });
+  th+='<th style="color:#fff;border-left:2px solid rgba(255,255,255,.4)">All History</th></tr>';
+
+  // Header row 2
+  th+='<tr style="background:#bbdefb;">';
+  th+='<th style="text-align:left;color:#000"></th><th style="text-align:left;color:#000"></th><th style="color:#000"></th>';
+  sortedDates.forEach(function(){
+    th+='<th style="font-size:11px;border-left:2px solid #90caf9;color:#000;font-weight:bold">Min (idx/dBm)<br>@ time</th>'
+       +'<th style="font-size:11px;color:#000;font-weight:bold">Max (idx/dBm)<br>@ time</th>';
+  });
+  th+='<th style="color:#000"></th></tr>';
+  thead.innerHTML=th;
+
+  var tb='';
+  panels.forEach(function(p,pi){
+    var badge=p._fullFetched
+      ?'<span style="background:#e8f5e9;color:#1b5e20;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:bold">Full</span>'
+      :'<span style="background:#e3f2fd;color:#1565c0;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:bold">7d</span>';
+    tb+='<tr>';
+    tb+='<td class="uid-cell">'+p.uid+'<br>'+badge+'</td>';
+    tb+='<td class="dev-cell">'+p.name+'</td>';
+    tb+='<td class="sim-cell">'+p.simName+'</td>';
+    sortedDates.forEach(function(d){
+      var r=p.daysRSSI[d];
+      if(r){
+        var minDbm=toDbm(r.min); var maxDbm=toDbm(r.max);
+        var minTime=new Date(r.minTs).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+        var maxTime=new Date(r.maxTs).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+        var minCls=rssiClass(r.min); var maxCls=rssiClass(r.max);
+        tb+='<td style="border-left:2px solid #e0e0e0">'
+          +'<div class="rssi-cell '+minCls+'">'+r.min+(minDbm!==null?' / '+minDbm+'dBm':'')
+          +'<br><span style="font-size:10px;opacity:.8">&#64;'+minTime+'</span></div></td>';
+        tb+='<td>'
+          +'<div class="rssi-cell '+maxCls+'">'+r.max+(maxDbm!==null?' / '+maxDbm+'dBm':'')
+          +'<br><span style="font-size:10px;opacity:.8">&#64;'+maxTime+'</span></div></td>';
+      }else{
+        tb+='<td style="border-left:2px solid #e0e0e0;color:#ccc">—</td><td style="color:#ccc">—</td>';
+      }
+    });
+    // All history + graph button
+    tb+='<td style="border-left:2px solid #e0e0e0;white-space:nowrap">';
+    tb+='<button class="graph-btn" onclick="openChart('+pi+')">&#128202; Graph</button><br>';
+    if(!p._fullFetched){
+      tb+='<button onclick="fetchFullRSSI('+pi+')" style="margin-top:3px;padding:2px 8px;background:#e65100;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:bold">All History</button>';
+    }
+    tb+='</td></tr>';
+  });
+  tbody.innerHTML=tb;
+}
+
+// OPEN CHART for panel
+function openChart(panelIdx){
+  selectedPanel=allPanels[panelIdx];
+  document.getElementById('chartPanel').style.display='block';
+  document.getElementById('chartTitle').innerText='RSSI Time-series — '+selectedPanel.uid+' ('+selectedPanel.name+') — SIM: '+selectedPanel.simName;
+
+  // Populate date selector
+  var sel=document.getElementById('chartDateSel');
+  sel.innerHTML='';
+  var dates=Object.keys(selectedPanel.daysRSSI).sort().reverse();
+  if(!dates.length){sel.innerHTML='<option>No data</option>';return;}
+  dates.forEach(function(d){
+    sel.add(new Option(new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),d));
+  });
+  loadChart();
+
+  // Scroll to chart
+  document.getElementById('chartPanel').scrollIntoView({behavior:'smooth'});
+}
+
+async function loadChart(){
+  var sel=document.getElementById('chartDateSel');
+  var dateKey=sel.value;
+  if(!dateKey||!selectedPanel)return;
+
+  document.getElementById('chartLoading').style.display='inline';
+
+  var dayStart=new Date(dateKey); dayStart.setHours(0,0,0,0);
+  var dayEnd=new Date(dateKey); dayEnd.setHours(23,59,59,999);
+
+  // Fetch all rssi for selected day
+  var rssiData=[];
+  try{
+    var res=await fetch(
+      tbUrl+'/api/plugins/telemetry/DEVICE/'+selectedPanel._deviceId+
+      '/values/timeseries?keys=rssi&startTs='+dayStart.getTime()+'&endTs='+dayEnd.getTime()+'&limit=5000&agg=NONE&orderBy=ASC',
+      {headers:{Authorization:'Bearer '+tbToken}});
+    if(res.ok){
+      var d=await res.json();
+      rssiData=(d.rssi||[]).filter(function(r){return Number(r.value)!==99;});
+    }
+  }catch(e){}
+
+  document.getElementById('chartLoading').style.display='none';
+
+  if(!rssiData.length){
+    document.getElementById('chartStats').innerHTML='<div style="color:#aaa;padding:12px">No RSSI data for this date.</div>';
+    return;
+  }
+
+  var labels=rssiData.map(function(r){
+    return new Date(r.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+  });
+  var values=rssiData.map(function(r){return Number(r.value);});
+  var dbmValues=values.map(function(v){return toDbm(v);});
+
+  // Find min/max
+  var minVal=Math.min.apply(null,values); var maxVal=Math.max.apply(null,values);
+  var minIdx=values.indexOf(minVal); var maxIdx=values.indexOf(maxVal);
+  var avgVal=(values.reduce(function(a,b){return a+b;},0)/values.length);
+  var minDbm=toDbm(minVal); var maxDbm=toDbm(maxVal); var avgDbm=toDbm(Math.round(avgVal));
+
+  // Point colors — highlight min/max
+  var pointColors=values.map(function(v,i){
+    if(i===minIdx)return '#c62828';
+    if(i===maxIdx)return '#2e7d32';
+    return 'rgba(21,101,192,0.6)';
+  });
+  var pointRadius=values.map(function(v,i){
+    return (i===minIdx||i===maxIdx)?6:3;
+  });
+
+  if(chartInstance)chartInstance.destroy();
+  chartInstance=new Chart(document.getElementById('rssiChart'),{
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[{
+        label:'RSSI index',
+        data:values,
+        borderColor:'#1565c0',
+        borderWidth:2,
+        pointBackgroundColor:pointColors,
+        pointRadius:pointRadius,
+        pointHoverRadius:6,
+        tension:0.3,
+        fill:false
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          callbacks:{
+            label:function(ctx){
+              var idx=ctx.parsed.y;
+              var dbm=toDbm(idx);
+              return 'RSSI: '+idx+(dbm?' ('+dbm+' dBm)':'')+' — '+rssiQuality(idx);
+            }
+          }
+        }
+      },
+      scales:{
+        x:{
+          ticks:{
+            maxTicksLimit:12,
+            autoSkip:true,
+            maxRotation:45,
+            color:'#555',
+            font:{size:10}
+          },
+          grid:{color:'rgba(0,0,0,.06)'}
+        },
+        y:{
+          min:0, max:32,
+          ticks:{
+            stepSize:5,
+            color:'#555',
+            font:{size:10},
+            callback:function(v){
+              var dbm=toDbm(v);
+              return v+(dbm?' ('+dbm+')':'');
+            }
+          },
+          grid:{color:'rgba(0,0,0,.06)'},
+          title:{display:true,text:'RSSI index (0–31)',color:'#555',font:{size:11}}
+        }
+      }
+    }
+  });
+
+  // Stats row
+  var minCls=rssiClass(minVal); var maxCls=rssiClass(maxVal); var avgCls=rssiClass(Math.round(avgVal));
+  document.getElementById('chartStats').innerHTML=
+    '<div class="stat-card"><div class="stat-label">Min RSSI</div>'
+    +'<div class="stat-value rssi-cell '+minCls+'" style="display:inline-block">'+minVal
+    +(minDbm?' / '+minDbm+' dBm':'')+'</div>'
+    +'<div style="font-size:10px;color:#888">@ '+labels[minIdx]+'</div></div>'
+
+    +'<div class="stat-card"><div class="stat-label">Max RSSI</div>'
+    +'<div class="stat-value rssi-cell '+maxCls+'" style="display:inline-block">'+maxVal
+    +(maxDbm?' / '+maxDbm+' dBm':'')+'</div>'
+    +'<div style="font-size:10px;color:#888">@ '+labels[maxIdx]+'</div></div>'
+
+    +'<div class="stat-card"><div class="stat-label">Avg RSSI</div>'
+    +'<div class="stat-value rssi-cell '+avgCls+'" style="display:inline-block">'+avgVal.toFixed(1)
+    +(avgDbm?' / '+avgDbm+' dBm':'')+'</div></div>'
+
+    +'<div class="stat-card"><div class="stat-label">Total Readings</div>'
+    +'<div class="stat-value" style="color:#1565c0">'+rssiData.length+'</div></div>'
+
+    +'<div class="stat-card"><div class="stat-label">Signal Quality</div>'
+    +'<div class="stat-value" style="font-size:13px">'+rssiQuality(Math.round(avgVal))+'</div></div>';
+}
+
+// FULL HISTORY FETCH per panel
+async function fetchFullRSSI(panelIdx){
+  var p=allPanels[panelIdx];
+  if(!p)return;
+  var installDate=p.installedOnRaw?new Date(p.installedOnRaw):new Date(Date.now()-30*86400000);
+  var dayCount=Math.ceil((Date.now()-installDate)/86400000);
+  if(!confirm('Fetch full RSSI history for '+p.uid+' from '+p.installedOn+'?\n'+
+    'Estimated '+dayCount+' days (~'+(dayCount*96)+' readings).\nThis may take a minute.'))return;
+
+  var toTs=Date.now();
+  var fromTs=installDate.setHours(0,0,0,0);
+  var rssiAll=[]; var curEnd=toTs; var done=false;
+  setProgress('Fetching full RSSI for '+p.uid+'...');
+
+  while(!done){
+    try{
+      var rs=await fetch(
+        tbUrl+'/api/plugins/telemetry/DEVICE/'+p._deviceId+
+        '/values/timeseries?keys=rssi&startTs='+fromTs+'&endTs='+curEnd+'&limit=5000&agg=NONE&orderBy=DESC',
+        {headers:{Authorization:'Bearer '+tbToken}});
+      if(!rs.ok){done=true;break;}
+      var ds=await rs.json(); var chunk=ds.rssi||[];
+      rssiAll=rssiAll.concat(chunk);
+      if(chunk.length<5000){done=true;}
+      else{curEnd=chunk[chunk.length-1].ts-1;if(curEnd<=fromTs)done=true;}
+    }catch(e){done=true;}
+  }
+
+  var daysRSSI={};
+  rssiAll.forEach(function(r){
+    var v=Number(r.value); if(v===99)return;
+    var dk=new Date(r.ts).toISOString().slice(0,10);
+    if(!daysRSSI[dk])daysRSSI[dk]={min:v,max:v,minTs:r.ts,maxTs:r.ts};
+    else{
+      if(v<daysRSSI[dk].min){daysRSSI[dk].min=v;daysRSSI[dk].minTs=r.ts;}
+      if(v>daysRSSI[dk].max){daysRSSI[dk].max=v;daysRSSI[dk].maxTs=r.ts;}
+    }
+  });
+
+  allPanels[panelIdx].daysRSSI=daysRSSI;
+  allPanels[panelIdx]._fullFetched=true;
+  renderTable();
+  setProgress('Full history loaded for '+p.uid+': '+Object.keys(daysRSSI).length+' days.',100);
+}
+
+// EXCEL EXPORT
+function downloadExcel(){
+  if(!allPanels.length){alert('No data.');return;}
+  var wb=XLSX.utils.book_new();
+  var rows=[['UID','Device','SIM Name','Date','Min RSSI','Min dBm','Min Time','Max RSSI','Max dBm','Max Time','Quality']];
+  allPanels.forEach(function(p){
+    Object.keys(p.daysRSSI).sort().forEach(function(d){
+      var r=p.daysRSSI[d];
+      var minTime=new Date(r.minTs).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+      var maxTime=new Date(r.maxTs).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+      rows.push([p.uid,p.name,p.simName,d,
+        r.min,toDbm(r.min)||'',minTime,
+        r.max,toDbm(r.max)||'',maxTime,
+        rssiQuality(r.min)+' to '+rssiQuality(r.max)]);
+    });
+  });
+  var ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[14,20,12,12,10,10,12,10,10,12,20].map(function(w){return{wch:w};});
+  XLSX.utils.book_append_sheet(wb,ws,'RSSI Data');
+  XLSX.writeFile(wb,'SEMC_RSSI_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+</script>
+</body>
+</html>
