@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Zone/Ward FW Update &amp; Packet Status — ThingsBoard</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Roboto, Arial, sans-serif; font-size: 13px; background: #f4f6f8; margin: 0; padding: 20px; color: #333; }
+  .app-container { max-width: 900px; margin: 0 auto; }
+  h2 { color: #24446a; margin-bottom: 4px; }
+  .subtext { color: #888; margin-bottom: 16px; }
+  .card { background: #fff; border-radius: 6px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card h3 { margin: 0 0 10px 0; font-size: 14px; color: #305680; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .row label { font-weight: 500; color: #555; min-width: 90px; }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1; min-width: 160px;
+  }
+  button {
+    padding: 7px 14px; border: none; border-radius: 4px; background: #305680;
+    color: #fff; cursor: pointer; font-weight: 500;
+  }
+  button:hover { background: #24446a; }
+  button.secondary { background: #888; }
+  button.secondary:hover { background: #666; }
+  button:disabled { background: #bbb; cursor: not-allowed; }
+  .status-msg { margin: 8px 0; color: #888; min-height: 16px; }
+  .status-msg.error { color: #c0392b; font-weight: 500; }
+
+  .fw-info-bar {
+    background: #f0f4f8; border-left: 4px solid #305680; padding: 8px 12px;
+    margin-bottom: 12px; border-radius: 3px; display: flex; gap: 24px; flex-wrap: wrap;
+  }
+  .fw-info-bar .fw-item strong { display: block; color: #333; }
+  .fw-info-bar .fw-item span { color: #666; font-size: 12px; }
+
+  .packet-table { width: 100%; border-collapse: collapse; }
+  .packet-table th, .packet-table td { padding: 5px 8px; border-bottom: 1px solid #eee; text-align: left; }
+  .packet-table th { color: #777; font-weight: 500; font-size: 12px; }
+  .packet-table tr.zero-row { background: #fdecea; }
+  .packet-table tr.low-row { background: #fff8e1; }
+  .bar-track { background: #e8e8e8; border-radius: 3px; height: 14px; position: relative; }
+  .bar-fill { background: #4a90d9; height: 14px; border-radius: 3px; }
+  .zero-row .bar-fill { background: #d9534f; width: 100% !important; opacity: .35; }
+  .status-ok { color: #2e7d32; font-weight: 500; }
+  .status-zero { color: #c0392b; font-weight: 600; }
+  .status-low { color: #b8860b; font-weight: 500; }
+
+  .legend-item { display: inline-flex; align-items: center; gap: 4px; margin-left: 12px; }
+  .legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+
+  .packet-table.matrix { border-collapse: collapse; white-space: nowrap; }
+  .packet-table.matrix th, .packet-table.matrix td { padding: 4px 8px; border: 1px solid #eee; text-align: center; font-size: 12px; }
+  .packet-table.matrix th.device-col, .packet-table.matrix td.device-col { text-align: left; position: sticky; left: 0; background: #fff; z-index: 1; }
+  .packet-table.matrix th.fw-col, .packet-table.matrix td.fw-col { text-align: left; }
+  .cell-green { background: #c8e6c9; color: #1b5e20; font-weight: 600; }
+  .cell-blue { background: #bbdefb; color: #0d47a1; font-weight: 600; }
+  .cell-orange { background: #ffe0b2; color: #e65100; font-weight: 600; }
+  .cell-red { background: #ffcdd2; color: #b71c1c; font-weight: 600; }
+  .cell-na { background: #e0e0e0; color: #757575; font-weight: 500; }
+  .event-sub { display: block; font-size: 9px; font-weight: 400; opacity: .75; }
+  .packet-table.matrix th.sortable { cursor: pointer; user-select: none; }
+  .packet-table.matrix th.sortable:hover { background: #eef2f7; }
+
+  .session-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .session-bar span { color: #555; }
+  .note { font-size: 12px; color: #999; margin-top: 4px; }
+  .version-tag { font-size: 11px; color: #999; font-weight: 400; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="app-container">
+  <h2>Zone/Ward FW Update &amp; Packet Status <span class="version-tag">v2.8 — 11 Sep 2026</span></h2>
+  <div class="subtext">Logs into your ThingsBoard instance directly — nothing is stored on any server, only in this browser tab.</div>
+
+  <div id="sessionBar" class="session-bar" style="display:none;">
+    <span id="sessionInfo"></span>
+    <button class="secondary" id="logoutBtn">Logout / Switch account</button>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="card" id="loginSection">
+    <h3>1. Login</h3>
+    <div class="row">
+      <label>ThingsBoard URL</label>
+      <input type="text" id="baseUrlInput" value="https://schnelliot.in" />
+    </div>
+    <div class="row">
+      <label>Username</label>
+      <input type="text" id="usernameInput" placeholder="you@company.com" />
+    </div>
+    <div class="row">
+      <label>Password</label>
+      <input type="password" id="passwordInput" />
+    </div>
+    <div class="row">
+      <button id="loginBtn">Login</button>
+    </div>
+    <div class="note">If this page is hosted somewhere other than schnelliot.in itself, the request will only succeed if that domain's CORS settings allow it. Opening this file directly from disk (file://) is blocked by most browsers — host it on a small static server or on the same domain as ThingsBoard.</div>
+  </div>
+
+  <!-- CUSTOMER SELECTION (tenant admins only) -->
+  <div class="card" id="customerSection" style="display:none;">
+    <h3>2. Customer</h3>
+    <div class="row">
+      <label>Customer</label>
+      <select id="customerSelect"></select>
+      <button id="customerContinueBtn">Continue</button>
+    </div>
+  </div>
+
+  <!-- ZONE / WARD -->
+  <div class="card" id="zoneWardSection" style="display:none;">
+    <h3>3. Zone &amp; Ward</h3>
+    <div class="row">
+      <button id="loadZoneWardBtn">Load Zone/Ward List</button>
+    </div>
+    <div id="keyCheckBar" class="fw-info-bar" style="display:none;"></div>
+    <div class="row" id="zoneRow" style="display:none;">
+      <label>Zone</label>
+      <select id="zoneSelect"></select>
+    </div>
+    <div class="row" id="wardRow" style="display:none;">
+      <label>Ward</label>
+      <select id="wardSelect"></select>
+    </div>
+    <div class="note">Scans this customer's smslc asset attributes (zoneName/wardName) once to build the Zone and Ward dropdowns below. This one-time scan can take a little while for large device counts — after that, switching Zone or Ward is instant (no re-scan).</div>
+  </div>
+
+  <!-- WARD PACKET STATUS (all devices in ward) -->
+  <div class="card" id="deviceSection" style="display:none;">
+    <h3>4. Ward Packet Status — all devices</h3>
+    <div class="row">
+      <label>Start date</label>
+      <input type="date" id="startDateInput" />
+      <label>End date</label>
+      <input type="date" id="endDateInput" />
+      <button id="loadDataBtn">Load Ward Packet Status</button>
+      <button id="downloadCsvBtn" class="secondary" style="display:none;">Download CSV</button>
+    </div>
+    <div class="note">
+      Splits <code>pkt</code> telemetry per day per device: main colored number = <strong>live/heartbeat</strong> count (pkt == 0, expected ≈ 96/day = 24h × 4 at 15-min intervals); small "+N" = <strong>event</strong> count (pkt != 0). Coloring is based on the live count only. End date can't be today or later — today's count is still partial and would misleadingly show as low/red. Click any column header to sort by it (click again to reverse) — e.g. sort a day column to group the lowest counts together, then check their Lat/Lon to spot a localized network issue among neighbours. Click "S.No" to return to the default order.
+      <span class="legend-item"><span class="legend-swatch cell-green"></span>&gt; 100 pkts</span>
+      <span class="legend-item"><span class="legend-swatch cell-blue"></span>80–99 pkts</span>
+      <span class="legend-item"><span class="legend-swatch cell-orange"></span>60–79 pkts</span>
+      <span class="legend-item"><span class="legend-swatch cell-red"></span>&lt; 60 pkts</span>
+      <span class="legend-item"><span class="legend-swatch cell-na"></span>fetch failed (not a confirmed 0)</span>
+    </div>
+  </div>
+
+  <div id="statusMsg" class="status-msg"></div>
+  <div class="card" id="tableWrap" style="display:none; overflow-x:auto;">
+    <div id="versionLegend" style="display:none; margin-bottom:10px; font-size:12px;"></div>
+    <table class="packet-table" id="packetTable">
+      <thead>
+        <tr id="packetTableHeadRow"></tr>
+      </thead>
+      <tbody id="packetTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="trendChartWrap" style="display:none;">
+    <h3 style="margin:0 0 10px 0; font-size:14px; color:#305680;">Ward Trend — total LIVE (heartbeat) packets/day, all devices</h3>
+    <canvas id="trendCanvas" width="900" height="220" style="width:100%; max-width:900px; display:block;"></canvas>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// VERSION HISTORY
+//   v1.0 (2026-09-10) Ward search by device name/label text; single
+//                     device FW + packet table.
+//   v1.1 (2026-09-10) Zone/Ward cascade dropdowns, built by scanning
+//                     DEVICE attributes (this was later found wrong —
+//                     zone/ward actually live on the SMSLC asset).
+//   v1.2 (2026-09-10) Switched scan to the SMSLC ASSET's zoneName/
+//                     wardName attributes; devices resolved via TB
+//                     relations (asset<->device, direction auto-tried).
+//   v1.3 (2026-09-10) Added key-check diagnostic panel (shows real
+//                     attribute keys found, to fix config mismatches).
+//   v1.4 (2026-09-10) Replaced single-device view with a ward-wide
+//                     device x day matrix; systime-only packet count;
+//                     color thresholds (green/blue/orange/red).
+//   v1.5 (2026-09-10) Zone/Ward are now typed fields, not scanned
+//                     dropdowns; asset search starts only after
+//                     Customer+Zone+Ward are given, and stops at the
+//                     first matching asset instead of scanning the
+//                     whole customer up front.
+//   v1.6 (2026-09-10) Reverted v1.5's typed fields back to Zone/Ward
+//                     dropdowns, auto-filled from a one-time asset
+//                     scan (cached in-browser) — selecting Zone/Ward
+//                     afterwards is instant, no re-scan per pick.
+//   v1.7 (2026-09-10) BUG FIX: the packet-count query's "limit" param
+//                     was capping RAW points fetched before daily
+//                     aggregation (was daysBack+2, far too small for
+//                     ~96 pkts/day), so most days showed 0 even for
+//                     devices actively sending data. Sized limit to
+//                     the expected volume across the full range.
+//   v1.8 (2026-09-10) BUG FIX: a device whose packet-count fetch
+//                     failed (timeout/error) was silently rendered as
+//                     all-zero, indistinguishable from a genuinely
+//                     idle device. Failed fetches now show gray "N/A"
+//                     cells instead, and the status line reports how
+//                     many devices need a retry. Days-back max raised
+//                     to 180 for reviewing longer history.
+//   v1.9 (2026-09-10) Default Days-back changed to 8 (nearest even
+//                     number to "latest 7 days") so the matrix opens
+//                     on a short recent view by default; still
+//                     adjustable up to 180.
+//   v2.0 (2026-09-10) Added a fast Zone-population path using TB
+//                     Entity Groups (no per-asset scan needed to list
+//                     Zones); picking a Zone then loads+scans only
+//                     that group's assets to build Ward. Kept the old
+//                     full-scan approach as a "Full Scan" fallback
+//                     button in case Entity Groups aren't set up the
+//                     way this expects on this TB instance.
+//   v2.1 (2026-09-10) REVERTED v2.0: Entity Groups only surfaced a
+//                     generic "All" group here (not per-zone groups),
+//                     and its sample asset lacked zoneName/wardName
+//                     entirely — wrong asset population for this
+//                     purpose. Back to a single "Load Zone/Ward List"
+//                     button doing the full scan, as in v1.9.
+//   v2.2 (2026-09-11) FW version key fixed to "ver" (confirmed real
+//                     key from TB's own timeseries table). Added a
+//                     Serial No column (tries uid/serialNumber/serial/
+//                     sn/deviceSerial). Rows now sort by source asset
+//                     ID first, then device name. Days-back replaced
+//                     with explicit Start/End date pickers — End date
+//                     is capped at yesterday (today's count is always
+//                     partial and was showing as a misleading 0/red).
+//                     Added a "Download CSV" button for the matrix.
+//   v2.3 (2026-09-11) Serial-number guessing dropped (was unreliable);
+//                     replaced with a simple S.No (1,2,3...) column.
+//                     Rows now sort by the asset's real "uid"
+//                     attribute (confirmed present) instead of asset
+//                     ID. Added a ward-wide trend chart (total packets
+//                     per day across all devices) below the matrix,
+//                     drawn with plain canvas — no external chart
+//                     library needed.
+//   v2.4 (2026-09-11) BUG FIX: switching Ward (or Zone) left the old
+//                     trend chart and Download CSV button visible
+//                     with stale data. Both are now hidden/cleared
+//                     immediately on any Zone/Ward change, along with
+//                     the matrix table.
+//   v2.5 (2026-09-11) Switched from "systime" (count-only) to "pkt"
+//                     with a live/event split: pkt==0 is the ~15-min
+//                     heartbeat (expected ~96/day), pkt!=0 is an
+//                     event. This requires fetching raw values (not
+//                     TB's COUNT aggregation) so each point's value
+//                     can be inspected. Each day cell now shows the
+//                     live count (colored per threshold) plus a small
+//                     "+N events" — coloring is based on live count
+//                     only. Trend chart now plots live-count totals.
+//                     CSV export has separate Live/Events columns per
+//                     day. Devices that hit the raw-fetch cap are
+//                     flagged "⚠t" since their event count for that
+//                     range may be undercounted (live count is safe,
+//                     since heartbeat volume is bounded and predictable).
+//   v2.6 (2026-09-11) FW Version column is now color-coded — each
+//                     distinct version string in the ward gets its
+//                     own color (evenly spread hues), so version
+//                     drift is visible at a glance. A small legend
+//                     above the table maps each color to its version.
+//   v2.7 (2026-09-11) Added Lat/Lon columns (device attributes "lat"/
+//                     "lon") so nearby panels can be visually
+//                     cross-checked. Added a filter row under the
+//                     column headers: text columns (Device, FW
+//                     Version, Lat, Lon) filter by substring; day
+//                     columns accept an operator + number (e.g. "<60",
+//                     ">=100") or a plain number for exact match,
+//                     filtering on the live count — useful for
+//                     isolating which devices dropped on a given day
+//                     to spot a localized network issue. CSV export
+//                     now respects active filters (exports only
+//                     visible rows) and includes Lat/Lon.
+//   v2.8 (2026-09-11) BUG FIX: lat/lon were being read as DEVICE
+//                     attributes, but they're actually the ASSET
+//                     attributes "slatitude"/"slongitude" (confirmed
+//                     via TB UI) — folded into the same attribute
+//                     scan that already reads zoneName/wardName/uid,
+//                     so no extra network round-trip is needed.
+//                     Per-column filter row REMOVED per request;
+//                     replaced with clickable column-header sorting
+//                     (click to sort ascending, click again for
+//                     descending; click "S.No" to restore default
+//                     uid-based order). CSV export reflects whatever
+//                     sort order is currently on screen.
+// =====================================================================
+// =====================================================================
+// CONFIG (ADJUST ME)
+// =====================================================================
+var CONFIG = {
+  FW_ATTR_KEYS: ['ver', 'cs_ver', 'fw_version', 'firmwareVersion', 'swVersion', 'current_fw', 'fwVersion'],
+  UID_ATTR_KEY: 'uid',        // attribute key on the ASSET (confirmed present); used for sort order
+  LAT_ATTR_KEY: 'slatitude',  // ATTRIBUTE key on the ASSET (confirmed via TB UI)
+  LON_ATTR_KEY: 'slongitude', // ATTRIBUTE key on the ASSET (confirmed via TB UI)
+  ASSET_TYPE: 'smslc',        // asset type carrying zone/ward
+  ZONE_ATTR_KEY: 'zoneName',  // attribute key on the ASSET
+  WARD_ATTR_KEY: 'wardName',  // attribute key on the ASSET
+  ASSET_LIST_PAGE_SIZE: 200,
+  MAX_ASSETS_SCAN: 10000,     // safety cap; narrow via Customer selection if you hit this
+  ATTR_BATCH_SIZE: 30,
+  PACKET_KEY: 'pkt',           // pkt == 0 -> live/heartbeat (every ~15 min); pkt != 0 -> event
+  RAW_FETCH_MIN_LIMIT: 5000,
+  RAW_FETCH_MAX_LIMIT: 20000,  // safety cap on raw points fetched per device per range
+  EXPECTED_PACKETS_PER_DAY: 96, // 24h x 4 (one packet every 15 min)
+  // Day color thresholds (packet count for that day):
+  //   >=100        -> green   (>100 requested; 100 itself resolved to green, see reply)
+  //   80 to 99     -> blue
+  //   60 to 79     -> orange
+  //   below 60     -> red
+  THRESHOLD_GREEN: 100,
+  THRESHOLD_BLUE: 80,
+  THRESHOLD_ORANGE: 60
+};
+
+// =====================================================================
+// STATE
+// =====================================================================
+var state = {
+  baseUrl: '',
+  token: '',
+  user: null,
+  customerId: null,
+  zoneWardEntries: [],   // [{ asset, zone, ward }] — cached after full scan
+  currentWardDevices: [],
+  currentZone: null,
+  currentWard: null,
+  lastRenderedRows: [],
+  lastRenderedDays: [],
+  originalMatrixRows: [],
+  matrixSort: { col: null, dir: 1 }
+};
+
+// Default the date range to end yesterday (today's count is always
+// partial and would misleadingly show as low/red) and cap the End
+// date input so today/future can't be picked at all.
+(function initDateDefaults() {
+  function toISO(d) { return d.toISOString().slice(0, 10); }
+  var yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+  var defaultStart = new Date(yesterday.getTime() - 7 * 24 * 3600 * 1000); // 8 days total
+  var endInput = document.getElementById('endDateInput');
+  var startInput = document.getElementById('startDateInput');
+  endInput.max = toISO(yesterday);
+  startInput.max = toISO(yesterday);
+  endInput.value = toISO(yesterday);
+  startInput.value = toISO(defaultStart);
+})();
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+function normalizeUrl(u) {
+  u = (u || '').trim();
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u.replace(/\/+$/, '');
+}
+
+function setStatus(msg, isError) {
+  var el = document.getElementById('statusMsg');
+  el.textContent = msg || '';
+  el.className = 'status-msg' + (isError ? ' error' : '');
+}
+
+// Natural sort so "Ward 2" < "Ward 10" (not lexicographic), still ascending A→Z otherwise.
+function naturalSort(a, b) {
+  var ax = [], bx = [];
+  String(a).replace(/(\d+)|(\D+)/g, function (_, d, s) { ax.push([d ? parseInt(d, 10) : Infinity, s || '']); return ''; });
+  String(b).replace(/(\d+)|(\D+)/g, function (_, d, s) { bx.push([d ? parseInt(d, 10) : Infinity, s || '']); return ''; });
+  while (ax.length && bx.length) {
+    var an = ax.shift(), bn = bx.shift();
+    var nn = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
+    if (nn) return nn;
+  }
+  return ax.length - bx.length;
+}
+
+function apiRequest(method, path, body) {
+  var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+  if (state.token) opts.headers['X-Authorization'] = 'Bearer ' + state.token;
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  return fetch(state.baseUrl + path, opts).then(function (res) {
+    if (!res.ok) {
+      return res.text().then(function (t) {
+        var msg;
+        try { msg = JSON.parse(t).message; } catch (e) { msg = t; }
+        throw new Error(msg || ('HTTP ' + res.status));
+      });
+    }
+    var ct = res.headers.get('content-type') || '';
+    return ct.indexOf('application/json') !== -1 ? res.json() : res.text();
+  });
+}
+
+// =====================================================================
+// STEP 1: LOGIN
+// =====================================================================
+document.getElementById('loginBtn').onclick = function () {
+  state.baseUrl = normalizeUrl(document.getElementById('baseUrlInput').value);
+  var username = document.getElementById('usernameInput').value.trim();
+  var password = document.getElementById('passwordInput').value;
+  if (!username || !password) { setStatus('Enter username and password.', true); return; }
+
+  setStatus('Logging in...');
+  fetch(state.baseUrl + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username, password: password })
+  }).then(function (res) {
+    if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
+    return res.json();
+  }).then(function (data) {
+    state.token = data.token;
+    return apiRequest('GET', '/api/auth/user');
+  }).then(function (user) {
+    state.user = user;
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('sessionBar').style.display = 'flex';
+    document.getElementById('sessionInfo').textContent =
+      'Logged in as ' + (user.email || user.name || 'user') + ' (' + user.authority + ') @ ' + state.baseUrl;
+    setStatus('');
+
+    if (user.authority === 'CUSTOMER_USER') {
+      state.customerId = user.customerId && user.customerId.id;
+      document.getElementById('zoneWardSection').style.display = 'block';
+    } else {
+      loadCustomers();
+    }
+  }).catch(function (err) {
+    setStatus('Login failed: ' + (err && err.message ? err.message : err), true);
+  });
+};
+
+document.getElementById('logoutBtn').onclick = function () {
+  state = { baseUrl: '', token: '', user: null, customerId: null, zoneWardEntries: [], currentWardDevices: [], currentZone: null, currentWard: null, lastRenderedRows: [], lastRenderedDays: [], originalMatrixRows: [], matrixSort: { col: null, dir: 1 } };
+  ['sessionBar', 'customerSection', 'zoneWardSection', 'deviceSection', 'tableWrap', 'trendChartWrap']
+    .forEach(function (id) { document.getElementById(id).style.display = 'none'; });
+  ['zoneRow', 'wardRow'].forEach(function (id) { document.getElementById(id).style.display = 'none'; });
+  document.getElementById('downloadCsvBtn').style.display = 'none';
+  document.getElementById('loginSection').style.display = 'block';
+  document.getElementById('passwordInput').value = '';
+  setStatus('');
+};
+
+// =====================================================================
+// STEP 2: CUSTOMER SELECTION (tenant-level users only) — sorted ascending
+// =====================================================================
+function loadCustomers() {
+  apiRequest('GET', '/api/customers?pageSize=100&page=0').then(function (res) {
+    var customers = (res.data || []).slice().sort(function (a, b) {
+      return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' });
+    });
+    var sel = document.getElementById('customerSelect');
+    sel.innerHTML = '';
+    var allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All customers (tenant-wide)';
+    sel.appendChild(allOpt);
+    customers.forEach(function (c) {
+      var opt = document.createElement('option');
+      opt.value = c.id.id;
+      opt.textContent = c.title;
+      sel.appendChild(opt);
+    });
+    document.getElementById('customerSection').style.display = 'block';
+  }).catch(function (err) {
+    setStatus('Could not load customers: ' + (err && err.message ? err.message : err), true);
+  });
+}
+
+document.getElementById('customerContinueBtn').onclick = function () {
+  var val = document.getElementById('customerSelect').value;
+  state.customerId = val || null;
+  document.getElementById('zoneWardSection').style.display = 'block';
+};
+
+// =====================================================================
+// STEP 3: ZONE / WARD — scan customer's smslc assets once, cache the
+// zone/ward attribute values, then Zone/Ward dropdown selection is
+// instant (filtered from the cache, no further network calls).
+// =====================================================================
+function fetchAllAssetsInScope() {
+  var base = state.customerId ? '/api/customer/' + state.customerId + '/assets' : '/api/tenant/assets';
+  var all = [];
+  function fetchPage(page) {
+    var url = base + '?type=' + encodeURIComponent(CONFIG.ASSET_TYPE) +
+               '&pageSize=' + CONFIG.ASSET_LIST_PAGE_SIZE + '&page=' + page;
+    return apiRequest('GET', url).then(function (res) {
+      all = all.concat(res.data || []);
+      var reachedCap = all.length >= CONFIG.MAX_ASSETS_SCAN;
+      if (res.hasNext && !reachedCap) {
+        setStatus('Fetching asset list... (' + all.length + ' so far)');
+        return fetchPage(page + 1);
+      }
+      if (reachedCap) all = all.slice(0, CONFIG.MAX_ASSETS_SCAN);
+      return all;
+    });
+  }
+  return fetchPage(0);
+}
+
+// If the configured ASSET_TYPE matches nothing, list what asset types
+// actually exist in this scope so the type name can be corrected.
+function listAvailableAssetTypes() {
+  var base = state.customerId ? '/api/customer/' + state.customerId + '/assets' : '/api/tenant/assets';
+  return apiRequest('GET', base + '?pageSize=100&page=0').then(function (res) {
+    var types = {};
+    (res.data || []).forEach(function (a) { if (a.type) types[a.type] = true; });
+    return Object.keys(types);
+  }).catch(function () { return []; });
+}
+
+function scanAssetZoneWardAttributes(assets) {
+  var entries = [];
+  var batches = [];
+  for (var i = 0; i < assets.length; i += CONFIG.ATTR_BATCH_SIZE) {
+    batches.push(assets.slice(i, i + CONFIG.ATTR_BATCH_SIZE));
+  }
+  var done = 0;
+  var chain = Promise.resolve();
+  batches.forEach(function (batch) {
+    chain = chain.then(function () {
+      var calls = batch.map(function (asset) {
+        var url = '/api/plugins/telemetry/ASSET/' + asset.id.id + '/values/attributes?keys=' +
+                   CONFIG.ZONE_ATTR_KEY + ',' + CONFIG.WARD_ATTR_KEY + ',' + CONFIG.UID_ATTR_KEY + ',' +
+                   CONFIG.LAT_ATTR_KEY + ',' + CONFIG.LON_ATTR_KEY;
+        return apiRequest('GET', url).then(function (attrs) {
+          var zoneVal, wardVal, uidVal, latVal, lonVal;
+          (attrs || []).forEach(function (a) {
+            if (a.key === CONFIG.ZONE_ATTR_KEY) zoneVal = a.value;
+            if (a.key === CONFIG.WARD_ATTR_KEY) wardVal = a.value;
+            if (a.key === CONFIG.UID_ATTR_KEY) uidVal = a.value;
+            if (a.key === CONFIG.LAT_ATTR_KEY) latVal = a.value;
+            if (a.key === CONFIG.LON_ATTR_KEY) lonVal = a.value;
+          });
+          entries.push({ asset: asset, zone: zoneVal, ward: wardVal, uid: uidVal, lat: latVal, lon: lonVal });
+        }).catch(function () {
+          entries.push({ asset: asset, zone: undefined, ward: undefined, uid: undefined, lat: undefined, lon: undefined });
+        });
+      });
+      return Promise.all(calls).then(function () {
+        done += batch.length;
+        setStatus('Scanned ' + done + '/' + assets.length + ' assets for zone/ward...');
+      });
+    });
+  });
+  return chain.then(function () { return entries; });
+}
+
+function renderAvailableKeys(keys, sampleName) {
+  var bar = document.getElementById('keyCheckBar');
+  bar.style.display = 'flex';
+  if (!keys || !keys.length) {
+    bar.innerHTML = '<div class="fw-item"><strong>Attribute keys</strong><span>No attributes found on sample asset "' + sampleName + '". Check a different asset or confirm attributes are set.</span></div>';
+    return;
+  }
+  var zoneOk = keys.indexOf(CONFIG.ZONE_ATTR_KEY) !== -1;
+  var wardOk = keys.indexOf(CONFIG.WARD_ATTR_KEY) !== -1;
+  bar.innerHTML =
+    '<div class="fw-item"><strong>Sample asset</strong><span>' + sampleName + '</span></div>' +
+    '<div class="fw-item"><strong>All attribute keys found</strong><span>' + keys.join(', ') + '</span></div>' +
+    '<div class="fw-item"><strong>zone key "' + CONFIG.ZONE_ATTR_KEY + '"</strong><span>' + (zoneOk ? 'found ✓' : 'NOT found — update CONFIG.ZONE_ATTR_KEY') + '</span></div>' +
+    '<div class="fw-item"><strong>ward key "' + CONFIG.WARD_ATTR_KEY + '"</strong><span>' + (wardOk ? 'found ✓' : 'NOT found — update CONFIG.WARD_ATTR_KEY') + '</span></div>';
+}
+
+function checkKeysForConfig(assets) {
+  if (!assets.length) return Promise.resolve();
+  var sample = assets[0];
+  return apiRequest('GET', '/api/plugins/telemetry/ASSET/' + sample.id.id + '/keys/attributes').then(function (keys) {
+    renderAvailableKeys(keys, sample.name);
+  }).catch(function () {
+    renderAvailableKeys(null, sample.name);
+  });
+}
+
+function populateZoneDropdown() {
+  var zones = {};
+  state.zoneWardEntries.forEach(function (e) { if (e.zone) zones[e.zone] = true; });
+  var zoneList = Object.keys(zones).sort(naturalSort);
+  var sel = document.getElementById('zoneSelect');
+  sel.innerHTML = '';
+  zoneList.forEach(function (z) {
+    var opt = document.createElement('option');
+    opt.value = z;
+    opt.textContent = z;
+    sel.appendChild(opt);
+  });
+  document.getElementById('zoneRow').style.display = 'flex';
+  if (zoneList.length) populateWardDropdown(zoneList[0]);
+}
+
+function populateWardDropdown(zone) {
+  var wards = {};
+  state.zoneWardEntries.forEach(function (e) {
+    if (e.zone === zone && e.ward) wards[e.ward] = true;
+  });
+  var wardList = Object.keys(wards).sort(naturalSort);
+  var sel = document.getElementById('wardSelect');
+  sel.innerHTML = '';
+  wardList.forEach(function (w) {
+    var opt = document.createElement('option');
+    opt.value = w;
+    opt.textContent = w;
+    sel.appendChild(opt);
+  });
+  document.getElementById('wardRow').style.display = 'flex';
+  if (wardList.length) resolveWardDevices(zone, wardList[0]);
+  else {
+    document.getElementById('deviceSection').style.display = 'none';
+    document.getElementById('tableWrap').style.display = 'none';
+    document.getElementById('trendChartWrap').style.display = 'none';
+    document.getElementById('downloadCsvBtn').style.display = 'none';
+    document.getElementById('versionLegend').style.display = 'none';
+    state.lastRenderedRows = [];
+    state.lastRenderedDays = [];
+    state.originalMatrixRows = [];
+    state.matrixSort = { col: null, dir: 1 };
+  }
+}
+
+// Devices are only reachable via a relation from/to the SMSLC asset.
+// Reads the ASSET's latest lat/lon TELEMETRY (confirmed via TB UI to
+// live under Latest Telemetry, not Attributes, and on the asset, not
+// the device — all devices linked to one asset share its location).
+// Try asset->device first, then fall back to device->asset, since the
+// relation direction depends on how it was originally modeled.
+function fetchRelatedDevices(assetId) {
+  return apiRequest('GET', '/api/relations?fromId=' + assetId + '&fromType=ASSET&relationTypeGroup=COMMON').then(function (rels) {
+    var ids = (rels || []).filter(function (r) { return r.to && r.to.entityType === 'DEVICE'; }).map(function (r) { return r.to.id; });
+    if (ids.length) return ids;
+    return apiRequest('GET', '/api/relations?toId=' + assetId + '&toType=ASSET&relationTypeGroup=COMMON').then(function (rels2) {
+      return (rels2 || []).filter(function (r) { return r.from && r.from.entityType === 'DEVICE'; }).map(function (r) { return r.from.id; });
+    });
+  }).then(function (deviceIds) {
+    return Promise.all(deviceIds.map(function (id) {
+      return apiRequest('GET', '/api/device/' + id).catch(function () { return null; });
+    })).then(function (devices) { return devices.filter(Boolean); });
+  });
+}
+
+function resolveWardDevices(zone, ward) {
+  var matchingEntries = state.zoneWardEntries.filter(function (e) { return e.zone === zone && e.ward === ward; });
+  document.getElementById('deviceSection').style.display = 'none';
+  document.getElementById('tableWrap').style.display = 'none';
+  document.getElementById('trendChartWrap').style.display = 'none';
+  document.getElementById('downloadCsvBtn').style.display = 'none';
+  document.getElementById('versionLegend').style.display = 'none';
+  state.lastRenderedRows = [];
+  state.lastRenderedDays = [];
+  state.originalMatrixRows = [];
+  state.matrixSort = { col: null, dir: 1 };
+  if (!matchingEntries.length) { setStatus('No asset found for Zone "' + zone + '" / Ward "' + ward + '".', true); return; }
+
+  setStatus('Fetching devices related to ' + matchingEntries.length + ' asset(s) for Zone "' + zone + '" / Ward "' + ward + '"...');
+  Promise.all(matchingEntries.map(function (entry) {
+    return fetchRelatedDevices(entry.asset.id.id).then(function (devs) {
+      devs.forEach(function (d) { d.__assetId = entry.asset.id.id; d.__assetName = entry.asset.name; d.__assetUid = entry.uid; d.__assetLat = entry.lat; d.__assetLon = entry.lon; });
+      return devs;
+    });
+  })).then(function (results) {
+    var allDevices = [];
+    results.forEach(function (devs) { allDevices = allDevices.concat(devs); });
+    allDevices.sort(function (a, b) {
+      var uidCmp = naturalSort(a.__assetUid || '', b.__assetUid || '');
+      if (uidCmp) return uidCmp;
+      return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+    });
+    state.currentWardDevices = allDevices;
+    state.currentZone = zone;
+    state.currentWard = ward;
+    document.getElementById('deviceSection').style.display = allDevices.length ? 'block' : 'none';
+    if (allDevices.length) {
+      setStatus(allDevices.length + ' device(s) found for Zone "' + zone + '" / Ward "' + ward + '". Click "Load Ward Packet Status".');
+    } else {
+      setStatus('No devices related to the asset(s) for Zone "' + zone + '" / Ward "' + ward + '". Relation type/direction may differ from what this tool tries.', true);
+    }
+  }).catch(function (err) {
+    setStatus('Error fetching related devices: ' + (err && err.message ? err.message : err), true);
+  });
+}
+
+document.getElementById('loadZoneWardBtn').onclick = function () {
+  setStatus('Fetching asset list...');
+  document.getElementById('zoneRow').style.display = 'none';
+  document.getElementById('wardRow').style.display = 'none';
+  document.getElementById('deviceSection').style.display = 'none';
+  document.getElementById('loadZoneWardBtn').disabled = true;
+
+  fetchAllAssetsInScope().then(function (assets) {
+    if (!assets.length) {
+      return listAvailableAssetTypes().then(function (types) {
+        setStatus('No assets of type "' + CONFIG.ASSET_TYPE + '" found in this scope.' +
+          (types.length ? ' Asset types that DO exist here: ' + types.join(', ') + ' — update CONFIG.ASSET_TYPE to match.' : ''), true);
+        return null;
+      });
+    }
+    return checkKeysForConfig(assets).then(function () { return scanAssetZoneWardAttributes(assets); });
+  }).then(function (entries) {
+    if (!entries) return;
+    state.zoneWardEntries = entries;
+    populateZoneDropdown();
+    setStatus('Loaded ' + entries.length + ' asset(s). Select a Zone and Ward.');
+  }).catch(function (err) {
+    setStatus('Error loading zone/ward list: ' + (err && err.message ? err.message : err), true);
+  }).then(function () {
+    document.getElementById('loadZoneWardBtn').disabled = false;
+  });
+};
+
+document.getElementById('zoneSelect').onchange = function () {
+  populateWardDropdown(this.value);
+};
+document.getElementById('wardSelect').onchange = function () {
+  resolveWardDevices(document.getElementById('zoneSelect').value, this.value);
+};
+
+// =====================================================================
+// STEP 4: FW INFO + PACKET COUNTS (per device) AND WARD MATRIX RENDER
+// =====================================================================
+function findDeviceAttribute(deviceId, keyCandidates) {
+  var scopes = ['CLIENT_SCOPE', 'SHARED_SCOPE', 'SERVER_SCOPE'];
+  var chain = Promise.resolve(null);
+  keyCandidates.forEach(function (key) {
+    scopes.forEach(function (scope) {
+      chain = chain.then(function (found) {
+        if (found) return found;
+        var url = '/api/plugins/telemetry/DEVICE/' + deviceId + '/values/attributes/' + scope + '?keys=' + key;
+        return apiRequest('GET', url).then(function (attrs) {
+          if (attrs && attrs.length) {
+            return { key: key, scope: scope, value: attrs[0].value, lastUpdateTs: attrs[0].lastUpdateTs };
+          }
+          return null;
+        }).catch(function () { return null; });
+      });
+    });
+  });
+  return chain;
+}
+
+function fetchFwInfo(deviceId) {
+  return findDeviceAttribute(deviceId, CONFIG.FW_ATTR_KEYS);
+}
+
+function loadPacketBreakdown(deviceId, key, startTs, endTs, daysBack) {
+  // Raw (unaggregated) values are needed here, since we must inspect
+  // each point's value (0 = live/heartbeat, non-zero = event) rather
+  // than just count how many arrived. "limit" caps raw points fetched;
+  // sized generously since event traffic is on top of the ~96/day
+  // heartbeat baseline and its volume isn't known in advance.
+  var limit = Math.min(CONFIG.RAW_FETCH_MAX_LIMIT, Math.max(CONFIG.RAW_FETCH_MIN_LIMIT, daysBack * 500));
+  var url = '/api/plugins/telemetry/DEVICE/' + deviceId + '/values/timeseries' +
+             '?keys=' + encodeURIComponent(key) +
+             '&startTs=' + startTs + '&endTs=' + endTs +
+             '&limit=' + limit;
+  return apiRequest('GET', url).then(function (res) {
+    var points = (res && res[key]) || [];
+    return { points: points, truncated: points.length >= limit };
+  });
+}
+
+function bucketPktPoints(points) {
+  var byDate = {}; // dateString -> { live, events }
+  points.forEach(function (p) {
+    var dateStr = new Date(p.ts).toDateString();
+    if (!byDate[dateStr]) byDate[dateStr] = { live: 0, events: 0 };
+    if (Number(p.value) === 0) byDate[dateStr].live += 1;
+    else byDate[dateStr].events += 1;
+  });
+  return byDate;
+}
+
+function classForCount(count) {
+  if (count >= CONFIG.THRESHOLD_GREEN) return 'cell-green';
+  if (count >= CONFIG.THRESHOLD_BLUE) return 'cell-blue';
+  if (count >= CONFIG.THRESHOLD_ORANGE) return 'cell-orange';
+  return 'cell-red';
+}
+
+function buildVersionColorMap(rows) {
+  var versions = [];
+  var seen = {};
+  rows.forEach(function (row) {
+    var v = row.fw ? row.fw.value : null;
+    if (v && !seen[v]) { seen[v] = true; versions.push(v); }
+  });
+  var map = {};
+  versions.forEach(function (v, i) {
+    var hue = Math.round((i * 360) / versions.length);
+    map[v] = { bg: 'hsl(' + hue + ', 60%, 87%)', fg: 'hsl(' + hue + ', 65%, 25%)' };
+  });
+  return map;
+}
+
+function renderVersionLegend(versionColorMap) {
+  var el = document.getElementById('versionLegend');
+  var versions = Object.keys(versionColorMap);
+  if (!versions.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = '<strong>FW Versions:</strong> ' + versions.map(function (v) {
+    var c = versionColorMap[v];
+    return '<span class="legend-item"><span class="legend-swatch" style="background:' + c.bg + ';"></span>' + v + '</span>';
+  }).join(' ');
+}
+
+function renderWardMatrix(rows, dayDates) {
+  state.lastRenderedRows = rows;
+  state.lastRenderedDays = dayDates;
+
+  var sortableCols = [
+    { key: 'sno', label: 'S.No' },
+    { key: 'device', label: 'Device' },
+    { key: 'fw', label: 'FW Version' },
+    { key: 'lat', label: 'Lat' },
+    { key: 'lon', label: 'Lon' }
+  ].concat(dayDates.map(function (d) { return { key: d.toDateString(), label: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }) }; }));
+
+  var headRow = document.getElementById('packetTableHeadRow');
+  headRow.innerHTML = sortableCols.map(function (col, i) {
+    var arrow = state.matrixSort.col === col.key ? (state.matrixSort.dir === 1 ? ' ▲' : ' ▼') : '';
+    var cls = (col.key === 'device') ? 'device-col sortable' : (col.key === 'fw' ? 'fw-col sortable' : 'sortable');
+    return '<th class="' + cls + '" data-col="' + col.key + '" title="Click to sort">' + col.label + arrow + '</th>';
+  }).join('');
+  headRow.querySelectorAll('.sortable').forEach(function (th) {
+    th.onclick = function () { sortMatrixBy(this.getAttribute('data-col')); };
+  });
+
+  var versionColorMap = buildVersionColorMap(rows);
+  renderVersionLegend(versionColorMap);
+
+  var tbody = document.getElementById('packetTableBody');
+  tbody.innerHTML = '';
+  rows.forEach(function (row, idx) {
+    var tr = document.createElement('tr');
+    var fwText = row.fw ? row.fw.value : '—';
+    var fwStyle = '';
+    if (row.fw && versionColorMap[row.fw.value]) {
+      var vc = versionColorMap[row.fw.value];
+      fwStyle = ' style="background:' + vc.bg + '; color:' + vc.fg + '; font-weight:600;"';
+    }
+    var latText = (row.lat !== null && row.lat !== undefined) ? row.lat : '—';
+    var lonText = (row.lon !== null && row.lon !== undefined) ? row.lon : '—';
+    var cells;
+    if (row.fetchFailed) {
+      cells = dayDates.map(function () { return '<td class="cell-na" title="Could not fetch data for this device">N/A</td>'; }).join('');
+    } else {
+      cells = dayDates.map(function (d) {
+        var key = d.toDateString();
+        var dayData = row.countsByDate.hasOwnProperty(key) ? row.countsByDate[key] : { live: 0, events: 0 };
+        return '<td class="' + classForCount(dayData.live) + '">' + dayData.live +
+          '<span class="event-sub">+' + dayData.events + '</span></td>';
+      }).join('');
+    }
+    tr.innerHTML =
+      '<td>' + (idx + 1) + '</td>' +
+      '<td class="device-col">' + row.device.name + (row.device.label ? ' (' + row.device.label + ')' : '') +
+        (row.fetchFailed ? ' ⚠' : '') + (row.truncated ? ' <span title="Raw data fetch hit its cap — event count may be undercounted for this range">⚠t</span>' : '') + '</td>' +
+      '<td class="fw-col"' + fwStyle + '>' + fwText + '</td>' +
+      '<td>' + latText + '</td>' + '<td>' + lonText + '</td>' + cells;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('packetTable').className = 'packet-table matrix';
+  document.getElementById('tableWrap').style.display = 'block';
+}
+
+function getSortValue(row, col) {
+  if (col === 'device') return (row.device.name || '').toLowerCase();
+  if (col === 'fw') return row.fw ? String(row.fw.value).toLowerCase() : null;
+  if (col === 'lat') return (row.lat !== null && row.lat !== undefined) ? parseFloat(row.lat) : null;
+  if (col === 'lon') return (row.lon !== null && row.lon !== undefined) ? parseFloat(row.lon) : null;
+  // day column -> that day's live count
+  if (row.fetchFailed) return null;
+  var dayData = row.countsByDate[col];
+  return dayData ? dayData.live : 0;
+}
+
+function sortMatrixBy(col) {
+  if (state.matrixSort.col === col) state.matrixSort.dir *= -1;
+  else { state.matrixSort.col = col; state.matrixSort.dir = 1; }
+
+  var sorted;
+  if (col === 'sno') {
+    sorted = state.originalMatrixRows.slice();
+    if (state.matrixSort.dir === -1) sorted.reverse();
+  } else {
+    var dir = state.matrixSort.dir;
+    sorted = state.originalMatrixRows.slice().sort(function (a, b) {
+      var av = getSortValue(a, col), bv = getSortValue(b, col);
+      var aNull = (av === null || av === undefined), bNull = (bv === null || bv === undefined);
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;   // nulls always sort last, regardless of direction
+      if (bNull) return -1;
+      var cmp = (typeof av === 'number' && typeof bv === 'number') ? (av - bv) : String(av).localeCompare(String(bv));
+      return cmp * dir;
+    });
+  }
+  renderWardMatrix(sorted, state.lastRenderedDays);
+}
+
+function renderTrendChart(rows, dayDates) {
+  var wrap = document.getElementById('trendChartWrap');
+  var canvas = document.getElementById('trendCanvas');
+  if (!dayDates.length) { wrap.style.display = 'none'; return; }
+
+  // Total LIVE (heartbeat) packets per day, summed across all devices
+  // that didn't fail to fetch. Event packets aren't part of this trend.
+  var totals = dayDates.map(function (d) {
+    var key = d.toDateString();
+    var sum = 0;
+    rows.forEach(function (row) {
+      if (row.fetchFailed) return;
+      var dayData = row.countsByDate.hasOwnProperty(key) ? row.countsByDate[key] : { live: 0, events: 0 };
+      sum += dayData.live || 0;
+    });
+    return sum;
+  });
+
+  wrap.style.display = 'block';
+  // Match canvas backing resolution to its displayed CSS size for crisp lines.
+  var cssWidth = canvas.clientWidth || 900;
+  var cssHeight = 220;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  var padL = 44, padR = 12, padT = 14, padB = 30;
+  var plotW = cssWidth - padL - padR;
+  var plotH = cssHeight - padT - padB;
+  var maxVal = Math.max.apply(null, totals.concat([1]));
+  var niceMax = Math.ceil(maxVal / 10) * 10 || 10;
+
+  // Gridlines + y-axis labels
+  ctx.strokeStyle = '#eee';
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Roboto, Arial, sans-serif';
+  ctx.textAlign = 'right';
+  var ySteps = 4;
+  for (var s = 0; s <= ySteps; s++) {
+    var val = Math.round((niceMax / ySteps) * s);
+    var y = padT + plotH - (val / niceMax) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + plotW, y);
+    ctx.stroke();
+    ctx.fillText(String(val), padL - 6, y + 3);
+  }
+
+  // Line + points
+  var stepX = totals.length > 1 ? plotW / (totals.length - 1) : 0;
+  ctx.strokeStyle = '#305680';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  totals.forEach(function (val, i) {
+    var x = padL + i * stepX;
+    var y = padT + plotH - (val / niceMax) * plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = '#305680';
+  totals.forEach(function (val, i) {
+    var x = padL + i * stepX;
+    var y = padT + plotH - (val / niceMax) * plotH;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // X-axis date labels (skip some if too many to avoid overlap)
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'center';
+  var labelEvery = Math.ceil(dayDates.length / 10) || 1;
+  dayDates.forEach(function (d, i) {
+    if (i % labelEvery !== 0 && i !== dayDates.length - 1) return;
+    var x = padL + i * stepX;
+    ctx.fillText(d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }), x, cssHeight - 10);
+  });
+}
+
+document.getElementById('loadDataBtn').onclick = function () {
+  var devices = state.currentWardDevices || [];
+  if (!devices.length) { setStatus('Select a Zone and Ward with devices first.', true); return; }
+
+  var startVal = document.getElementById('startDateInput').value;
+  var endVal = document.getElementById('endDateInput').value;
+  if (!startVal || !endVal) { setStatus('Pick a Start date and End date.', true); return; }
+
+  // Parse as local-midnight dates so day buckets line up with calendar days.
+  var startTs = new Date(startVal + 'T00:00:00').getTime();
+  var endOfEndDay = new Date(endVal + 'T00:00:00').getTime() + 24 * 3600 * 1000; // exclusive upper bound
+  var todayStart = new Date(new Date().toDateString()).getTime();
+  if (endOfEndDay > todayStart) {
+    setStatus('End date can\'t be today or later (today\'s count is still partial). Pick yesterday or earlier.', true);
+    return;
+  }
+  if (startTs >= endOfEndDay) { setStatus('Start date must be before End date.', true); return; }
+
+  var daysBack = Math.round((endOfEndDay - startTs) / (24 * 3600 * 1000));
+  var dayDates = [];
+  for (var i = 0; i < daysBack; i++) {
+    dayDates.push(new Date(startTs + i * 24 * 3600 * 1000));
+  }
+
+  document.getElementById('loadDataBtn').disabled = true;
+  document.getElementById('downloadCsvBtn').style.display = 'none';
+  var rows = [];
+  var batches = [];
+  for (var i2 = 0; i2 < devices.length; i2 += CONFIG.ATTR_BATCH_SIZE) {
+    batches.push(devices.slice(i2, i2 + CONFIG.ATTR_BATCH_SIZE));
+  }
+  var done = 0;
+  var chain = Promise.resolve();
+  batches.forEach(function (batch) {
+    chain = chain.then(function () {
+      var calls = batch.map(function (dev) {
+        var fwPromise = fetchFwInfo(dev.id.id).catch(function () { return null; });
+        var packetsPromise = loadPacketBreakdown(dev.id.id, CONFIG.PACKET_KEY, startTs, endOfEndDay, daysBack)
+          .then(function (result) { return { ok: true, points: result.points, truncated: result.truncated }; })
+          .catch(function (err) { return { ok: false, error: err }; });
+        return Promise.all([fwPromise, packetsPromise]).then(function (res) {
+          var fw = res[0];
+          var packetResult = res[1];
+          var lat = (dev.__assetLat !== undefined) ? dev.__assetLat : null;
+          var lon = (dev.__assetLon !== undefined) ? dev.__assetLon : null;
+          if (!packetResult.ok) {
+            rows.push({ device: dev, fw: fw, lat: lat, lon: lon, countsByDate: {}, fetchFailed: true, truncated: false });
+            return;
+          }
+          var countsByDate = bucketPktPoints(packetResult.points);
+          rows.push({ device: dev, fw: fw, lat: lat, lon: lon, countsByDate: countsByDate, fetchFailed: false, truncated: packetResult.truncated });
+        });
+      });
+      return Promise.all(calls).then(function () {
+        done += batch.length;
+        setStatus('Loaded ' + done + '/' + devices.length + ' device(s)...');
+      });
+    });
+  });
+
+  chain.then(function () {
+    rows.sort(function (a, b) {
+      var uidCmp = naturalSort(a.device.__assetUid || '', b.device.__assetUid || '');
+      if (uidCmp) return uidCmp;
+      return (a.device.name || '').localeCompare(b.device.name || '', undefined, { sensitivity: 'base' });
+    });
+    state.originalMatrixRows = rows;
+    state.matrixSort = { col: null, dir: 1 };
+    renderWardMatrix(rows, dayDates);
+    renderTrendChart(rows, dayDates);
+    var failedCount = rows.filter(function (r) { return r.fetchFailed; }).length;
+    var truncatedCount = rows.filter(function (r) { return r.truncated; }).length;
+    var msg = 'Done — ' + devices.length + ' device(s), ' + daysBack + ' day(s) (' + startVal + ' to ' + endVal + '), key "' + CONFIG.PACKET_KEY + '" (live vs event split).';
+    if (failedCount) msg += ' ' + failedCount + ' device(s) could not be fetched (shown as N/A, not 0) — click Load again to retry.';
+    if (truncatedCount) msg += ' ' + truncatedCount + ' device(s) hit the raw-data fetch cap (marked ⚠t) — their event count for this range may be undercounted.';
+    setStatus(msg, !!(failedCount || truncatedCount));
+    document.getElementById('downloadCsvBtn').style.display = 'inline-block';
+  }).catch(function (err) {
+    setStatus('Error loading ward packet matrix: ' + (err && err.message ? err.message : err), true);
+  }).then(function () {
+    document.getElementById('loadDataBtn').disabled = false;
+  });
+};
+
+function csvEscape(val) {
+  var s = (val === null || val === undefined) ? '' : String(val);
+  if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+document.getElementById('downloadCsvBtn').onclick = function () {
+  var visibleRows = state.lastRenderedRows || [];
+  var dayDates = state.lastRenderedDays || [];
+  if (!visibleRows.length) return;
+
+  var header = ['S.No', 'Device', 'FW Version', 'Lat', 'Lon'].concat(dayDates.reduce(function (acc, d) {
+    var label = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+    return acc.concat([label + ' Live', label + ' Events']);
+  }, []));
+  var lines = [header.map(csvEscape).join(',')];
+
+  visibleRows.forEach(function (row, idx) {
+    var deviceLabel = row.device.name + (row.device.label ? ' (' + row.device.label + ')' : '') +
+      (row.fetchFailed ? ' [FETCH FAILED]' : '') + (row.truncated ? ' [POSSIBLY TRUNCATED]' : '');
+    var fwText = row.fw ? row.fw.value : '';
+    var latText = (row.lat !== null && row.lat !== undefined) ? row.lat : '';
+    var lonText = (row.lon !== null && row.lon !== undefined) ? row.lon : '';
+    var dayCells = dayDates.reduce(function (acc, d) {
+      if (row.fetchFailed) return acc.concat(['N/A', 'N/A']);
+      var key = d.toDateString();
+      var dayData = row.countsByDate.hasOwnProperty(key) ? row.countsByDate[key] : { live: 0, events: 0 };
+      return acc.concat([dayData.live, dayData.events]);
+    }, []);
+    lines.push([idx + 1, deviceLabel, fwText, latText, lonText].concat(dayCells).map(csvEscape).join(','));
+  });
+
+  var csvContent = lines.join('\r\n');
+  var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var zoneLabel = (state.currentZone || 'zone').replace(/[^a-z0-9]+/gi, '_');
+  var wardLabel = (state.currentWard || 'ward').replace(/[^a-z0-9]+/gi, '_');
+  a.href = url;
+  a.download = 'ward_packet_status_' + zoneLabel + '_' + wardLabel + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+</script>
+</body>
+</html>
