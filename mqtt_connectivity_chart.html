@@ -67,6 +67,43 @@ label.rad em{font-style:normal;color:var(--muted)}
 .zoomInfo{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;font-size:12.5px;color:var(--muted);margin-bottom:6px}
 #zoomLbl{color:var(--ink);font-weight:500}
 #hover{cursor:crosshair}
+.zoombar .sep{width:1px;background:var(--line);margin:2px 4px}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+/* overview brush under the state chart */
+.brushWrap{margin:6px 0 0 96px;margin-right:16px}
+.brush{position:relative;height:30px;background:var(--none);border-radius:4px;cursor:crosshair;touch-action:none;user-select:none}
+.brush .seg{position:absolute;top:0;bottom:0;opacity:.55;pointer-events:none}
+#brushWin{position:absolute;top:-3px;bottom:-3px;border:2px solid var(--accent);border-radius:4px;background:color-mix(in srgb,var(--accent) 14%,transparent);cursor:grab}
+#brushWin:active{cursor:grabbing}
+#brushWin .h{position:absolute;top:0;bottom:0;width:12px;cursor:ew-resize}
+#brushWin .h::after{content:"";position:absolute;top:7px;bottom:7px;left:4px;width:4px;border-radius:2px;background:var(--accent)}
+#brushWin .h.l{left:-8px} #brushWin .h.r{right:-8px}
+/* calendar */
+.cals{display:flex;flex-wrap:wrap;gap:18px}
+.cal{flex:1;min-width:470px}
+.cal h3{font-size:14px;font-weight:600;margin:0 0 6px}
+.calGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.calGrid .wd{font-size:11.5px;color:var(--muted);text-align:center}
+.cell{min-height:62px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;display:flex;flex-direction:column;gap:3px;background:var(--panel);color:var(--ink);text-align:left;font:inherit;font-weight:400}
+.cell.out{opacity:.35;background:transparent}
+button.cell{cursor:pointer}
+button.cell:hover{border-color:var(--accent)}
+.cell.sel{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+.cell .n{font-size:12.5px;font-weight:600;display:flex;justify-content:space-between}
+.cell .n em{font-style:normal;font-weight:500}
+.cell.good{background:color-mix(in srgb,var(--on) 12%,var(--panel))} .cell.good em{color:var(--on)}
+.cell.warn{background:color-mix(in srgb,var(--pf) 14%,var(--panel))} .cell.warn em{color:var(--pf)}
+.cell.bad{background:color-mix(in srgb,var(--off) 14%,var(--panel))} .cell.bad em{color:var(--off)}
+.mini{position:relative;height:7px;border-radius:2px;background:var(--none);overflow:hidden;margin-top:auto}
+.mini i{position:absolute;top:0;bottom:0}
+/* expanded day bar */
+#dayBox{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.dayBar{position:relative;height:36px;background:var(--none);border-radius:4px;overflow:hidden;cursor:crosshair;touch-action:none;user-select:none}
+.dayBar .seg{position:absolute;top:0;bottom:0;pointer-events:none}
+.dayBar .pm{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed;pointer-events:none}
+#daySel{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 22%,transparent);pointer-events:none;display:none}
+#dayCur{position:absolute;top:0;bottom:0;width:1px;background:var(--ink);opacity:.6;pointer-events:none;display:none}
+#dayRead{min-height:20px;font-size:12.5px;margin-top:2px}
 #stateSvg{width:100%;height:auto;display:block}
 #stateSvg text{fill:var(--muted);font-size:11px;font-family:inherit}
 #stateSvg .grid{stroke:var(--line);stroke-width:1}
@@ -118,16 +155,32 @@ label.rad em{font-style:normal;color:var(--muted)}
       <div class="stats" id="stats"></div>
     </div>
     <div class="panel">
+      <div class="head"><h2>Calendar</h2><span class="legend" style="margin:0"><span><i style="background:var(--on)"></i>≥ 99%</span><span><i style="background:var(--pf)"></i>95–99%</span><span><i style="background:var(--off)"></i>&lt; 95%</span></span></div>
+      <div class="scroll"><div class="cals" id="cal"></div></div>
+      <div id="dayBox" class="hidden">
+        <div class="head"><h2 id="dayTitle"></h2><span id="dayPct"></span></div>
+        <div class="dayBar" id="dayBar"><div id="daySel"></div><div id="dayCur"></div></div>
+        <div class="axis" id="axis"></div>
+        <div id="dayRead"></div>
+        <p class="hint">Drag on this bar to show that part of the day in the state chart. Click a day in the calendar to open it here.</p>
+      </div>
+    </div>
+    <div class="panel" id="chartPanel">
       <div class="head"><h2>Connection state over time</h2>
         <div class="zoombar">
           <button class="ghost" id="panL" title="Move window earlier" aria-label="Move window earlier">◀</button>
           <button class="ghost" id="zIn">Zoom in</button>
           <button class="ghost" id="zOut">Zoom out</button>
           <button class="ghost" id="panR" title="Move window later" aria-label="Move window later">▶</button>
+          <span class="sep"></span>
+          <button class="ghost" data-win="1">1 h</button>
+          <button class="ghost" data-win="6">6 h</button>
+          <button class="ghost" data-win="24">1 day</button>
+          <span class="sep"></span>
           <button class="ghost" id="zReset">Show full range</button>
         </div>
       </div>
-      <div class="zoomInfo"><span id="zoomLbl"></span><span>Drag across the chart to zoom into that window. Double-click to show the full range.</span></div>
+      <div class="zoomInfo"><span id="zoomLbl"></span><span>Drag on the chart or the strip below it to pick a window. Scroll the mouse wheel over the chart to zoom. Double-click for the full range.</span></div>
       <div class="pwrBar" role="radiogroup" aria-label="Power events shown on the chart">
         <span>Power events on chart:</span>
         <label class="rad"><input type="radio" name="pwr" value="none" checked>None</label>
@@ -138,14 +191,7 @@ label.rad em{font-style:normal;color:var(--muted)}
       <div class="scroll"><div class="chartBox" style="min-width:560px">
         <svg id="stateSvg" viewBox="0 0 1000 200"></svg>
         <div id="tip"></div>
-      </div></div>
-    </div>
-    <div class="panel">
-      <div class="head"><h2>Connectivity by day</h2></div>
-      <div class="legend"><span><i style="background:var(--on)"></i>Connected</span><span><i style="background:var(--off)"></i>Disconnected</span><span><i style="background:var(--none)"></i>No data / future</span></div>
-      <div class="scroll"><div style="min-width:560px">
-        <div class="tl" id="timeline"></div>
-        <div class="tl"><span></span><div class="axis" id="axis"></div><span></span></div>
+        <div class="brushWrap"><div class="brush" id="brush"><div id="brushSegs"></div><div id="brushWin"><span class="h l"></span><span class="h r"></span></div></div></div>
       </div></div>
     </div>
     <div class="panel">
@@ -331,21 +377,12 @@ function render(dev, segs, start, endDay, end, source, attr){
     <div class="stat"><b style="font-size:15px">${fmt(attr.lastActivityTime)}</b><span>Last activity</span></div>`;
 
   LAST = {segs, start, endDay, end}; VIEW = null;
+  STATS = {};
   $('cntF').textContent = ` (${PWR.pwrf.length})`; $('cntR').textContent = ` (${PWR.pwrr.length})`;
   drawState();
 
-  let html='';
-  for(let d=start; d<endDay; d+=DAY){
-    const dEnd=d+DAY; let bars='', dOn=0, dKnown=0;
-    segs.forEach(s=>{ const a=Math.max(s.s,d), b=Math.min(s.e,dEnd); if(b<=a) return;
-      if(s.on!==null){ dKnown+=b-a; if(s.on) dOn+=b-a; }
-      if(s.on===null) return;
-      bars += `<div title="${s.on?'Connected':'Disconnected'}: ${fmt(a)} – ${fmt(b)} (${dur(b-a)})" style="left:${(a-d)/DAY*100}%;width:${(b-a)/DAY*100}%;background:var(${s.on?'--on':'--off'})"></div>`;
-    });
-    const label = new Date(d).toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'});
-    html += `<span class="d">${label}</span><div class="ribbon">${bars}</div><span class="pct">${dKnown?(dOn/dKnown*100).toFixed(0)+'%':'–'}</span>`;
-  }
-  $('timeline').innerHTML = html;
+  SELDAY = null; $('dayBox').classList.add('hidden');
+  renderCalendar(); renderBrush();
   $('axis').innerHTML = [0,3,6,9,12,15,18,21,24].map(h=>`<span style="left:${h/24*100}%">${String(h).padStart(2,'0')}:00</span>`).join('');
   $('outTbl').innerHTML = OUTAGES.length ? OUTAGES.map((o,i)=>`<tr><td>${i+1}</td><td>${fmt(o.s)}</td><td>${o.e>=end && end<endDay?'Still disconnected':fmt(o.e)}</td><td>${dur(o.e-o.s)}</td></tr>`).join('')
     : '<tr><td colspan="4">No disconnections in this range.</td></tr>';
@@ -469,7 +506,127 @@ function drawState(){
   };
   hov.onpointerleave = () => { if(dragFrom === null){ tip.style.display = 'none'; cur.setAttribute('visibility', 'hidden'); } };
   hov.ondblclick = () => { VIEW = null; drawState(); };
+  hov.onwheel = e => { e.preventDefault(); zoomAt(toTs(toPx(e)), e.deltaY > 0 ? 1.25 : 0.8); };
+
+  // keep calendar, day bar and overview strip in step with the chart window
+  syncBrush();
+  if(span <= DAY && localDay(a) === localDay(b - 1)) openDay(localDay(a));
+  syncDaySel();
 }
+/* ---------- shared view helpers ---------- */
+let SELDAY = null, STATS = {};
+const localDay = ts => { const off = new Date(ts).getTimezoneOffset()*6e4; return Math.floor((ts - off)/DAY)*DAY + off; };
+function zoomAt(ts, f){ const {a,b} = VIEW; setView(ts - (ts-a)*f, ts + (b-ts)*f); }
+function windowOf(hours){ const {a,b} = VIEW, c = (a+b)/2, w = hours*36e5; setView(c - w/2, c + w/2); }
+function dayStats(d){
+  if(STATS[d]) return STATS[d];
+  let on = 0, known = 0;
+  LAST.segs.forEach(s => { if(s.on === null) return; const a = Math.max(s.s,d), b = Math.min(s.e,d+DAY); if(b<=a) return; known += b-a; if(s.on) on += b-a; });
+  return STATS[d] = {on, known, pct: known ? on/known*100 : null};
+}
+const segDivs = (d0, d1, cls) => LAST.segs.filter(s => s.on !== null && s.e > d0 && s.s < d1).map(s => {
+  const a = Math.max(s.s,d0), b = Math.min(s.e,d1);
+  return `<${cls} class="seg" style="left:${(a-d0)/(d1-d0)*100}%;width:${(b-a)/(d1-d0)*100}%;background:var(${s.on?'--on':'--off'})"></${cls}>`;
+}).join('');
+
+/* ---------- calendar ---------- */
+function renderCalendar(){
+  const {start, endDay} = LAST;
+  const months = [];
+  for(let m = new Date(start); m.getTime() < endDay; m = new Date(m.getFullYear(), m.getMonth()+1, 1)) months.push(new Date(m.getFullYear(), m.getMonth(), 1));
+  $('cal').innerHTML = months.map(m => {
+    const y = m.getFullYear(), mo = m.getMonth(), lead = (m.getDay()+6)%7, n = new Date(y, mo+1, 0).getDate();
+    let cells = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(w=>`<div class="wd">${w}</div>`).join('') + '<div></div>'.repeat(lead);
+    for(let day = 1; day <= n; day++){
+      const d = new Date(y, mo, day).getTime();
+      if(d < start || d >= endDay){ cells += `<div class="cell out"><span class="n">${day}</span></div>`; continue; }
+      const st = dayStats(d), p = st.pct;
+      const cls = p === null ? '' : p >= 99 ? 'good' : p >= 95 ? 'warn' : 'bad';
+      cells += `<button class="cell ${cls}${SELDAY===d?' sel':''}" data-day="${d}" title="${new Date(d).toDateString()}"><span class="n">${day}<em>${p===null?'–':p.toFixed(p>=99.95||p<10?0:1)+'%'}</em></span><span class="mini">${segDivs(d, d+DAY, 'i')}</span></button>`;
+    }
+    return `<div class="cal"><h3>${m.toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</h3><div class="calGrid">${cells}</div></div>`;
+  }).join('');
+  $('cal').querySelectorAll('button.cell').forEach(b => b.onclick = () => { const d = +b.dataset.day; openDay(d); setView(d, d+DAY); });
+}
+
+/* ---------- expanded day bar ---------- */
+function openDay(d){
+  if(SELDAY === d) return;
+  SELDAY = d;
+  $('cal').querySelectorAll('button.cell').forEach(b => b.classList.toggle('sel', +b.dataset.day === d));
+  const st = dayStats(d), bar = $('dayBar');
+  $('dayBox').classList.remove('hidden');
+  $('dayTitle').textContent = new Date(d).toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  $('dayPct').textContent = st.pct === null ? 'No data' : `${st.pct.toFixed(1)}% connected · ${LAST.segs.filter(s=>s.on===false && s.s>=d && s.s<d+DAY).length} disconnections`;
+  bar.querySelectorAll('.seg,.pm').forEach(n => n.remove());
+  bar.insertAdjacentHTML('afterbegin', segDivs(d, d+DAY, 'div') +
+    [['pwrf','--pf'],['pwrr','--pr']].map(([k,c]) => PWR[k].filter(t=>t>=d&&t<d+DAY).map(t=>`<div class="pm" title="${k}" style="left:${(t-d)/DAY*100}%;border-color:var(${c})"></div>`).join('')).join(''));
+  syncDaySel();
+}
+function syncDaySel(){
+  const sel = $('daySel'); if(SELDAY === null || !VIEW){ sel.style.display = 'none'; return; }
+  const a = Math.max(VIEW.a, SELDAY), b = Math.min(VIEW.b, SELDAY+DAY);
+  if(b <= a || (a === SELDAY && b === SELDAY+DAY)){ sel.style.display = 'none'; return; }
+  sel.style.display = 'block'; sel.style.left = (a-SELDAY)/DAY*100+'%'; sel.style.width = (b-a)/DAY*100+'%';
+}
+(function dayBarEvents(){
+  const bar = $('dayBar'), sel = $('daySel'), cur = $('dayCur');
+  const tsAt = e => { const r = bar.getBoundingClientRect(); return SELDAY + Math.min(1, Math.max(0, (e.clientX - r.left)/r.width)) * DAY; };
+  let from = null;
+  bar.onpointerdown = e => { if(SELDAY===null) return; from = tsAt(e); bar.setPointerCapture(e.pointerId); };
+  bar.onpointermove = e => {
+    if(SELDAY===null) return;
+    const ts = tsAt(e);
+    cur.style.display = 'block'; cur.style.left = (ts-SELDAY)/DAY*100+'%';
+    if(from !== null){
+      const a = Math.min(from,ts), b = Math.max(from,ts);
+      sel.style.display = 'block'; sel.style.left = (a-SELDAY)/DAY*100+'%'; sel.style.width = (b-a)/DAY*100+'%';
+      $('dayRead').textContent = `Selecting ${fmt(a)} – ${fmt(b)} (${dur(b-a)})`;
+    }else{
+      const s = LAST.segs.find(z => ts >= z.s && ts < z.e);
+      $('dayRead').textContent = fmt(ts) + ' – ' + (!s || s.on === null ? 'No data' : (s.on ? 'Connected' : 'Disconnected') + ` ${fmt(s.s)} – ${fmt(s.e)} (${dur(s.e-s.s)})`);
+    }
+  };
+  bar.onpointerup = e => {
+    if(from === null) return;
+    const ts = tsAt(e), a = Math.min(from,ts), b = Math.max(from,ts); from = null;
+    if(b - a >= MIN_WIN/2){ setView(a, b); $('chartPanel').scrollIntoView({behavior:'smooth', block:'nearest'}); }
+    else syncDaySel();
+  };
+  bar.onpointerleave = () => { if(from === null){ cur.style.display = 'none'; $('dayRead').textContent = ''; } };
+})();
+
+/* ---------- overview brush ---------- */
+function renderBrush(){ $('brushSegs').innerHTML = segDivs(LAST.start, LAST.endDay, 'div'); }
+function syncBrush(){
+  const {start, endDay} = LAST, w = $('brushWin');
+  w.style.left = (VIEW.a-start)/(endDay-start)*100+'%'; w.style.width = Math.max(0.4,(VIEW.b-VIEW.a)/(endDay-start)*100)+'%';
+}
+(function brushEvents(){
+  const br = $('brush');
+  const tsAt = e => { const r = br.getBoundingClientRect(); return LAST.start + Math.min(1, Math.max(0,(e.clientX-r.left)/r.width)) * (LAST.endDay-LAST.start); };
+  let mode = null, t0 = 0, v0 = null, raf = 0;
+  br.onpointerdown = e => {
+    if(!LAST) return;
+    t0 = tsAt(e); v0 = {...VIEW};
+    mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : e.target.closest('#brushWin') ? 'move' : 'new';
+    br.setPointerCapture(e.pointerId); e.preventDefault();
+  };
+  br.onpointermove = e => {
+    if(!mode) return;
+    const t = tsAt(e), dt = t - t0;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      if(mode === 'move') setView(v0.a + dt, v0.b + dt);
+      else if(mode === 'l') setView(Math.min(v0.a + dt, v0.b - MIN_WIN), v0.b);
+      else if(mode === 'r') setView(v0.a, Math.max(v0.b + dt, v0.a + MIN_WIN));
+      else if(Math.abs(dt) > 0) setView(Math.min(t0,t), Math.max(t0,t));
+    });
+  };
+  br.onpointerup = () => { mode = null; };
+  br.onwheel = e => { if(!LAST) return; e.preventDefault(); zoomAt(tsAt(e), e.deltaY > 0 ? 1.25 : 0.8); };
+})();
+
 let rsz; window.addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(drawState, 150); });
 
 function csv(){
@@ -488,6 +645,7 @@ function csv(){
   $('zIn').onclick=()=>zoomBy(0.5); $('zOut').onclick=()=>zoomBy(2);
   $('panL').onclick=()=>panBy(-0.5); $('panR').onclick=()=>panBy(0.5);
   $('zReset').onclick=()=>{ VIEW=null; drawState(); };
+  document.querySelectorAll('[data-win]').forEach(b => b.onclick = () => windowOf(+b.dataset.win));
   $('projSel').onchange=searchDevices;
   let tmr; $('devSearch').oninput=()=>{ clearTimeout(tmr); tmr=setTimeout(searchDevices,400); };
   const p = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.slice(1));
