@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Device MQTT Connectivity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF2F6; --panel:#FFFFFF; --ink:#1B2836; --muted:#5E6E80; --line:#D3DBE4;
+  --on:#2A9D68; --off:#D2433B; --none:#C3CCD6; --accent:#1D6FD1; --pf:#D9821E; --pr:#7C5BD3;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#121A23; --panel:#1A2531; --ink:#E4EAF1; --muted:#93A3B5; --line:#2C3A49;
+    --on:#3BB57D; --off:#E8605A; --none:#3A4858; --accent:#5C9EEB; --pf:#F0A040; --pr:#A68DF2; color-scheme: dark; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:18px}
+h1{font-size:20px;font-weight:600;margin:0 0 2px}
+.sub{color:var(--muted);margin:0 0 16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+input,select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 9px}
+input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
+button{cursor:pointer;background:var(--accent);color:#fff;border-color:var(--accent);font-weight:500}
+button.ghost{background:transparent;color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+.grow{flex:1;min-width:220px}
+#devList{min-width:280px}
+.status{font-size:13px;color:var(--muted);margin-top:8px;min-height:20px}
+.status.err{color:var(--off)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.stat{border-left:3px solid var(--line);padding:2px 10px}
+.stat b{display:block;font-size:22px;font-weight:600}
+.stat span{font-size:12.5px;color:var(--muted)}
+.stat.on{border-color:var(--on)} .stat.off{border-color:var(--off)}
+.legend{display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin:4px 0 10px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+.tl{display:grid;grid-template-columns:96px 1fr 58px;gap:6px 10px;align-items:center}
+.tl .d{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.tl .pct{font-size:12.5px;text-align:right}
+.ribbon{position:relative;height:22px;background:var(--none);border-radius:3px;overflow:hidden}
+.ribbon div{position:absolute;top:0;bottom:0}
+.axis{position:relative;height:16px;font-size:11px;color:var(--muted)}
+.axis span{position:absolute;transform:translateX(-50%)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:500}
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.head h2{font-size:15px;font-weight:600;margin:0}
+.hidden{display:none}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.chartBox{position:relative;touch-action:none}
+.pwrBar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:13px;margin-bottom:8px}
+.pwrBar>span{color:var(--muted)}
+label.rad{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px;cursor:pointer}
+label.rad input{margin:0;accent-color:var(--accent)}
+label.rad em{font-style:normal;color:var(--muted)}
+.sw{display:inline-block;width:14px;height:0;border-top:2px dashed}
+.zoombar{display:flex;flex-wrap:wrap;gap:4px}
+.zoombar button{padding:4px 9px;font-size:13px}
+.zoomInfo{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+#zoomLbl{color:var(--ink);font-weight:500}
+#hover{cursor:crosshair}
+#stateSvg{width:100%;height:auto;display:block}
+#stateSvg text{fill:var(--muted);font-size:11px;font-family:inherit}
+#stateSvg .grid{stroke:var(--line);stroke-width:1}
+#tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--panel);font-size:12px;padding:5px 8px;border-radius:5px;white-space:nowrap;transform:translate(-50%,-110%);display:none}
+@media (max-width:640px){.tl{grid-template-columns:70px 1fr 46px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Device MQTT connectivity</h1>
+  <p class="sub">Pick a project and a device, choose dates, and see when it was connected.</p>
+
+  <div class="panel" id="loginPanel">
+    <div class="row">
+      <label class="grow">ThingsBoard URL<input id="tbUrl" value="https://schnelliot.in"></label>
+      <label class="grow">Username<input id="tbUser" autocomplete="username"></label>
+      <label class="grow">Password<input id="tbPass" type="password" autocomplete="current-password"></label>
+      <button id="loginBtn">Sign in</button>
+    </div>
+    <div class="status" id="loginStatus"></div>
+  </div>
+
+  <div class="panel hidden" id="filterPanel">
+    <div class="row">
+      <label>Project<select id="projSel"></select></label>
+      <label class="grow">Search device (name)<input id="devSearch" placeholder="Type to search…"></label>
+      <label>Device<select id="devList"></select></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>From<input type="date" id="fromDate"></label>
+      <label>To<input type="date" id="toDate"></label>
+      <label>History source<select id="mode">
+        <option value="auto">Auto</option>
+        <option value="active">Status key history</option>
+        <option value="hb">Message gaps</option>
+      </select></label>
+      <label>Status key<input id="statusKey" value="connected" size="10"></label>
+      <label>Message keys<input id="hbKeys" value="pkt" size="10"></label>
+      <label>Offline after (min)<input type="number" id="gapMin" value="35" min="1" style="width:90px"></label>
+      <button id="runBtn">Show connectivity</button>
+      <button class="ghost" id="logoutBtn">Sign out</button>
+    </div>
+    <div class="status" id="runStatus"></div>
+  </div>
+
+  <div id="result" class="hidden">
+    <div class="panel">
+      <div class="head"><h2 id="devTitle"></h2><span id="curState"></span></div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="panel">
+      <div class="head"><h2>Connection state over time</h2>
+        <div class="zoombar">
+          <button class="ghost" id="panL" title="Move window earlier" aria-label="Move window earlier">◀</button>
+          <button class="ghost" id="zIn">Zoom in</button>
+          <button class="ghost" id="zOut">Zoom out</button>
+          <button class="ghost" id="panR" title="Move window later" aria-label="Move window later">▶</button>
+          <button class="ghost" id="zReset">Show full range</button>
+        </div>
+      </div>
+      <div class="zoomInfo"><span id="zoomLbl"></span><span>Drag across the chart to zoom into that window. Double-click to show the full range.</span></div>
+      <div class="pwrBar" role="radiogroup" aria-label="Power events shown on the chart">
+        <span>Power events on chart:</span>
+        <label class="rad"><input type="radio" name="pwr" value="none" checked>None</label>
+        <label class="rad"><input type="radio" name="pwr" value="pwrf"><i class="sw" style="border-color:var(--pf)"></i>Power fail (pwrf)<em id="cntF"></em></label>
+        <label class="rad"><input type="radio" name="pwr" value="pwrr"><i class="sw" style="border-color:var(--pr)"></i>Power restore (pwrr)<em id="cntR"></em></label>
+        <label class="rad"><input type="radio" name="pwr" value="both">Both</label>
+      </div>
+      <div class="scroll"><div class="chartBox" style="min-width:560px">
+        <svg id="stateSvg" viewBox="0 0 1000 200"></svg>
+        <div id="tip"></div>
+      </div></div>
+    </div>
+    <div class="panel">
+      <div class="head"><h2>Connectivity by day</h2></div>
+      <div class="legend"><span><i style="background:var(--on)"></i>Connected</span><span><i style="background:var(--off)"></i>Disconnected</span><span><i style="background:var(--none)"></i>No data / future</span></div>
+      <div class="scroll"><div style="min-width:560px">
+        <div class="tl" id="timeline"></div>
+        <div class="tl"><span></span><div class="axis" id="axis"></div><span></span></div>
+      </div></div>
+    </div>
+    <div class="panel">
+      <div class="head"><h2>Disconnections</h2><button class="ghost" id="csvBtn">Download CSV</button></div>
+      <div class="scroll"><table><thead><tr><th>#</th><th>Disconnected</th><th>Reconnected</th><th>Duration</th></tr></thead><tbody id="outTbl"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DAY = 864e5;
+let TB = '', TOKEN = '', USER = null, OUTAGES = [], devices = [];
+
+function store(k,v){ try{ v==null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k,v);}catch(e){} }
+function load(k){ try{ return sessionStorage.getItem(k);}catch(e){ return null; } }
+
+async function api(path, opts={}){
+  const r = await fetch(TB + path, {...opts, headers:{'Content-Type':'application/json','X-Authorization':'Bearer '+TOKEN,...(opts.headers||{})}});
+  if(r.status===401){ logout(); throw new Error('Session expired. Sign in again.'); }
+  if(!r.ok) throw new Error(`${r.status} on ${path.split('?')[0]}`);
+  return r.status===204 ? null : r.json();
+}
+async function pages(pathFn){
+  let out=[], page=0, more=true;
+  while(more){ const r = await api(pathFn(page)); out = out.concat(r.data||[]); more = r.hasNext; page++; if(page>200) break; }
+  return out;
+}
+
+/* ---------- auth ---------- */
+async function login(){
+  TB = $('tbUrl').value.replace(/\/+$/,'');
+  $('loginStatus').className='status'; $('loginStatus').textContent='Signing in…';
+  try{
+    const r = await fetch(TB+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('tbUser').value,password:$('tbPass').value})});
+    if(!r.ok) throw new Error('Sign-in failed ('+r.status+'). Check the username and password.');
+    TOKEN = (await r.json()).token; $('tbPass').value='';
+    store('tb_url',TB); store('tb_token',TOKEN);
+    await afterLogin();
+  }catch(e){ $('loginStatus').className='status err'; $('loginStatus').textContent=e.message.includes('fetch')?'Could not reach the server. Check the URL and that CORS allows this page.':e.message; }
+}
+function logout(){ TOKEN=''; store('tb_token',null); $('filterPanel').classList.add('hidden'); $('result').classList.add('hidden'); $('loginPanel').classList.remove('hidden'); }
+
+async function afterLogin(){
+  USER = await api('/api/auth/user');
+  $('loginPanel').classList.add('hidden'); $('filterPanel').classList.remove('hidden');
+  const sel = $('projSel'); sel.innerHTML='';
+  if(USER.authority==='CUSTOMER_USER'){
+    const c = await api('/api/customer/'+USER.customerId.id).catch(()=>({title:'My devices'}));
+    sel.add(new Option(c.title, USER.customerId.id));
+  }else{
+    sel.add(new Option('All projects', 'ALL'));
+    const cs = await pages(p=>`/api/customers?pageSize=100&page=${p}&sortProperty=title&sortOrder=ASC`);
+    cs.forEach(c=>sel.add(new Option(c.title, c.id.id)));
+  }
+  await searchDevices();
+}
+
+/* ---------- devices ---------- */
+async function searchDevices(){
+  const proj = $('projSel').value, q = encodeURIComponent($('devSearch').value.trim());
+  const base = proj==='ALL' ? '/api/tenant' : '/api/customer/'+proj;
+  const qs = `?pageSize=100&page=0&sortProperty=name&sortOrder=ASC${q?'&textSearch='+q:''}`;
+  $('runStatus').className='status'; $('runStatus').textContent='Loading devices…';
+  try{
+    let r; try{ r = await api(base+'/deviceInfos'+qs); }catch(e){ r = await api(base+'/devices'+qs); }
+    devices = r.data||[];
+    const dl = $('devList'); dl.innerHTML='';
+    devices.forEach(d=>dl.add(new Option((d.label? d.label+'  ·  ':'')+d.name, d.id.id)));
+    $('runStatus').textContent = devices.length ? `${devices.length}${r.hasNext?'+':''} devices${r.hasNext?' (refine the search to narrow down)':''}` : 'No devices match. Search uses the device name.';
+  }catch(e){ $('runStatus').className='status err'; $('runStatus').textContent=e.message; }
+}
+
+/* ---------- telemetry ---------- */
+async function series(devId, keys, start, end){
+  let pts=[];
+  for(let s=start; s<end; s+=7*DAY){
+    const e = Math.min(end, s+7*DAY);
+    const r = await api(`/api/plugins/telemetry/DEVICE/${devId}/values/timeseries?keys=${encodeURIComponent(keys)}&startTs=${s}&endTs=${e}&limit=100000&agg=NONE&orderBy=ASC`);
+    Object.values(r||{}).forEach(arr=>arr.forEach(p=>pts.push({ts:p.ts,v:p.value})));
+  }
+  return pts.sort((a,b)=>a.ts-b.ts);
+}
+async function lastBefore(devId, key, ts){
+  const r = await api(`/api/plugins/telemetry/DEVICE/${devId}/values/timeseries?keys=${key}&startTs=${ts-365*DAY}&endTs=${ts}&limit=1&agg=NONE&orderBy=DESC`);
+  return (r&&r[key]&&r[key][0]) || null;
+}
+/* pwrf / pwrr: the VALUE is a unix timestamp (seconds or ms). Devices may resend
+   the same value, so values are de-duplicated. Telemetry is read with a 1-day margin
+   because the report can arrive after the event itself. */
+async function powerEvents(devId, start, end){
+  const out = {pwrf:new Set(), pwrr:new Set()};
+  const to = Math.min(end + DAY, Date.now());
+  for(let s = start - DAY; s < to; s += 7*DAY){
+    const e = Math.min(to, s + 7*DAY);
+    const r = await api(`/api/plugins/telemetry/DEVICE/${devId}/values/timeseries?keys=pwrf,pwrr&startTs=${s}&endTs=${e}&limit=100000&agg=NONE&orderBy=ASC`).catch(()=>null);
+    ['pwrf','pwrr'].forEach(k => (r && r[k] || []).forEach(p => {
+      const v = Number(p.value); if(!isFinite(v) || v <= 0) return;
+      const ts = v < 1e12 ? v * 1000 : v;
+      if(ts >= start && ts <= end) out[k].add(ts);
+    }));
+  }
+  return {pwrf:[...out.pwrf].sort((a,b)=>a-b), pwrr:[...out.pwrr].sort((a,b)=>a-b)};
+}
+const truthy = v => v===true || v===1 || ['true','1','connected','online','on','yes'].includes(String(v).trim().toLowerCase());
+
+/* Builds [{s,e,on}] covering [start,end] */
+function fromActive(points, initial, start, end){
+  const segs=[]; let cur = initial, t = start;
+  points.forEach(p=>{ const on=truthy(p.v); if(p.ts<=t){ cur=on; return; } if(on!==cur){ segs.push({s:t,e:p.ts,on:cur}); t=p.ts; cur=on; } });
+  segs.push({s:t,e:end,on:cur});
+  return segs.map(x=>({...x,on:x.on===null?null:x.on}));
+}
+function fromHeartbeat(points, gap, start, end){
+  const on=[];
+  points.forEach(p=>{ const s=p.ts, e=Math.min(p.ts+gap,end); const last=on[on.length-1]; if(last && s<=last.e) last.e=Math.max(last.e,e); else on.push({s,e}); });
+  const segs=[]; let t=start;
+  on.forEach(o=>{ if(o.s>t) segs.push({s:t,e:o.s,on:false}); segs.push({s:o.s,e:o.e,on:true}); t=o.e; });
+  if(t<end) segs.push({s:t,e:end,on:false});
+  return segs;
+}
+
+/* ---------- run ---------- */
+async function run(){
+  const devId = $('devList').value; if(!devId){ $('runStatus').textContent='Pick a device first.'; return; }
+  const dev = devices.find(d=>d.id.id===devId);
+  const start = new Date($('fromDate').value+'T00:00:00').getTime();
+  const endDay = new Date($('toDate').value+'T00:00:00').getTime()+DAY;
+  const now = Date.now(), end = Math.min(endDay, now);
+  if(!(start<end)){ $('runStatus').className='status err'; $('runStatus').textContent='“From” must be on or before “To”, and not in the future.'; return; }
+  if(endDay-start > 92*DAY){ $('runStatus').className='status err'; $('runStatus').textContent='Choose a range of 92 days or less.'; return; }
+  $('runBtn').disabled=true; $('runStatus').className='status'; $('runStatus').textContent='Fetching history…';
+  try{
+    const mode = $('mode').value, gap = Math.max(1,+$('gapMin').value)*6e4;
+    const sKey = $('statusKey').value.trim() || 'connected';
+    let segs=null, source='';
+    if(mode!=='hb'){
+      const pts = await series(devId,sKey,start,end);
+      if(pts.length || mode==='active'){
+        const prev = await lastBefore(devId,sKey,start);
+        const init = prev ? truthy(prev.value) : (pts.length ? !truthy(pts[0].v) : null);
+        segs = fromActive(pts, init, start, end); source=`“${sKey}” key history`;
+      }
+    }
+    if(!segs){
+      const pts = await series(devId,$('hbKeys').value.replace(/\s/g,''),start,end);
+      segs = fromHeartbeat(pts,gap,start,end); source=`message gaps on ${$('hbKeys').value} (offline after ${gap/6e4} min silence)`;
+    }
+    const attrs = await api(`/api/plugins/telemetry/DEVICE/${devId}/values/attributes/SERVER_SCOPE?keys=active,lastConnectTime,lastDisconnectTime,lastActivityTime`).catch(()=>[]);
+    const attr = Object.fromEntries((attrs||[]).map(a=>[a.key,a.value]));
+    const latest = await api(`/api/plugins/telemetry/DEVICE/${devId}/values/timeseries?keys=${encodeURIComponent(sKey)}`).catch(()=>null);
+    const lv = latest && latest[sKey] && latest[sKey][0];
+    if(lv && lv.value!=null){ attr.active = lv.value; attr.statusTs = lv.ts; }
+    PWR = await powerEvents(devId, start, endDay);
+    render(dev, segs, start, endDay, end, source, attr);
+    $('runStatus').textContent='Source: '+source;
+  }catch(e){ $('runStatus').className='status err'; $('runStatus').textContent=e.message; }
+  $('runBtn').disabled=false;
+}
+
+/* ---------- render ---------- */
+const fmt = ts => ts ? new Date(ts).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}) : '–';
+const fmtS = ts => new Date(ts).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+function dur(ms){ const m=Math.round(ms/6e4); if(m<60) return m+' min'; const h=Math.floor(m/60); if(h<48) return h+' h '+(m%60)+' min'; return Math.floor(h/24)+' d '+(h%24)+' h'; }
+
+function render(dev, segs, start, endDay, end, source, attr){
+  $('result').classList.remove('hidden');
+  $('devTitle').textContent = (dev.label? dev.label+' · ':'') + dev.name;
+  const live = truthy(attr.active);
+  $('curState').innerHTML = attr.active===undefined ? '' : `<span class="dot" style="background:var(${live?'--on':'--off'})"></span>${live?'Connected':'Disconnected'}${attr.statusTs?' (last reported '+fmt(attr.statusTs)+')':' now'}`;
+
+  const known = segs.filter(s=>s.on!==null);
+  const onMs = known.filter(s=>s.on).reduce((a,s)=>a+s.e-s.s,0);
+  const totMs = known.reduce((a,s)=>a+s.e-s.s,0);
+  OUTAGES = segs.filter(s=>s.on===false);
+  const longest = OUTAGES.reduce((m,s)=>Math.max(m,s.e-s.s),0);
+  $('stats').innerHTML = `
+    <div class="stat on"><b>${totMs?(onMs/totMs*100).toFixed(1):'–'}%</b><span>Connected time</span></div>
+    <div class="stat off"><b>${OUTAGES.length}</b><span>Disconnections</span></div>
+    <div class="stat off"><b>${longest?dur(longest):'–'}</b><span>Longest disconnection</span></div>
+    <div class="stat"><b style="font-size:15px">${fmt(attr.lastConnectTime)}</b><span>Last connect (MQTT)</span></div>
+    <div class="stat"><b style="font-size:15px">${fmt(attr.lastDisconnectTime)}</b><span>Last disconnect (MQTT)</span></div>
+    <div class="stat"><b style="font-size:15px">${fmt(attr.lastActivityTime)}</b><span>Last activity</span></div>`;
+
+  LAST = {segs, start, endDay, end}; VIEW = null;
+  $('cntF').textContent = ` (${PWR.pwrf.length})`; $('cntR').textContent = ` (${PWR.pwrr.length})`;
+  drawState();
+
+  let html='';
+  for(let d=start; d<endDay; d+=DAY){
+    const dEnd=d+DAY; let bars='', dOn=0, dKnown=0;
+    segs.forEach(s=>{ const a=Math.max(s.s,d), b=Math.min(s.e,dEnd); if(b<=a) return;
+      if(s.on!==null){ dKnown+=b-a; if(s.on) dOn+=b-a; }
+      if(s.on===null) return;
+      bars += `<div title="${s.on?'Connected':'Disconnected'}: ${fmt(a)} – ${fmt(b)} (${dur(b-a)})" style="left:${(a-d)/DAY*100}%;width:${(b-a)/DAY*100}%;background:var(${s.on?'--on':'--off'})"></div>`;
+    });
+    const label = new Date(d).toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'});
+    html += `<span class="d">${label}</span><div class="ribbon">${bars}</div><span class="pct">${dKnown?(dOn/dKnown*100).toFixed(0)+'%':'–'}</span>`;
+  }
+  $('timeline').innerHTML = html;
+  $('axis').innerHTML = [0,3,6,9,12,15,18,21,24].map(h=>`<span style="left:${h/24*100}%">${String(h).padStart(2,'0')}:00</span>`).join('');
+  $('outTbl').innerHTML = OUTAGES.length ? OUTAGES.map((o,i)=>`<tr><td>${i+1}</td><td>${fmt(o.s)}</td><td>${o.e>=end && end<endDay?'Still disconnected':fmt(o.e)}</td><td>${dur(o.e-o.s)}</td></tr>`).join('')
+    : '<tr><td colspan="4">No disconnections in this range.</td></tr>';
+}
+
+/* ---------- state chart (date on x-axis, zoomable) ---------- */
+let LAST = null, VIEW = null, PWR = {pwrf:[], pwrr:[]};
+const MIN_WIN = 5*6e4;   // smallest zoom window: 5 minutes
+const TICK_STEPS = [1,5,15,30,60,180,360,720,1440,2880,10080].map(m=>m*6e4);
+
+function setView(a, b){
+  const {start, endDay} = LAST, full = endDay - start;
+  let w = Math.min(full, Math.max(MIN_WIN, b - a));
+  a = Math.max(start, Math.min(a, endDay - w));
+  VIEW = {a, b: a + w};
+  drawState();
+}
+function zoomBy(f){ const {a,b} = VIEW, c = (a+b)/2, w = (b-a)*f; setView(c - w/2, c + w/2); }
+function panBy(f){ const {a,b} = VIEW, w = b-a; setView(a + w*f, b + w*f); }
+
+function drawState(){
+  if(!LAST) return;
+  const {segs, start, endDay, end} = LAST;
+  if(!VIEW) VIEW = {a:start, b:endDay};
+  const {a, b} = VIEW, span = b - a;
+  const svg = $('stateSvg'), box = svg.parentNode;
+  const W = Math.max(560, box.clientWidth || 1000), H = 210;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const L = 96, R = 16, T = 24, B = 50, pw = W - L - R;
+  const x = ts => L + (Math.min(Math.max(ts, a), b) - a) / span * pw;
+  const yOn = T + 18, yOff = H - B - 18;
+  let g = `<defs><clipPath id="plot"><rect x="${L}" y="0" width="${pw}" height="${H}"/></clipPath></defs>`;
+
+  g += `<line class="grid" x1="${L}" x2="${W-R}" y1="${yOn}" y2="${yOn}"/><line class="grid" x1="${L}" x2="${W-R}" y1="${yOff}" y2="${yOff}"/>`;
+  g += `<text x="${L-10}" y="${yOn+4}" text-anchor="end">Connected</text><text x="${L-10}" y="${yOff+4}" text-anchor="end">Disconnected</text>`;
+
+  // adaptive ticks aligned to local time
+  const maxTicks = Math.max(2, Math.floor(pw / 80));
+  const step = TICK_STEPS.find(s => span / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length-1];
+  const off = new Date(a).getTimezoneOffset() * 6e4;
+  let first = true;
+  for(let ts = Math.ceil((a - off) / step) * step + off; ts <= b; ts += step){
+    const d = new Date(ts), midnight = d.getHours() === 0 && d.getMinutes() === 0;
+    g += `<line class="grid" x1="${x(ts)}" x2="${x(ts)}" y1="${T}" y2="${H-B}" ${midnight?'':'stroke-dasharray="2 3"'}/>`;
+    const date = d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+    if(step < DAY){
+      g += `<text x="${x(ts)}" y="${H-B+16}" text-anchor="middle">${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</text>`;
+      if(midnight || first) g += `<text x="${x(ts)}" y="${H-B+32}" text-anchor="middle">${date}</text>`;
+    }else{
+      g += `<text x="${x(ts)}" y="${H-B+16}" text-anchor="middle">${date}</text>`;
+    }
+    first = false;
+  }
+  g += `<text x="${L + pw/2}" y="${H-3}" text-anchor="middle">Date / time</text>`;
+
+  // state bands + step line, only what is inside the window
+  let bands = '', d = '', open = false;
+  segs.forEach(s => {
+    if(s.on === null || s.e <= a || s.s >= b){ if(s.on === null) open = false; return; }
+    const y = s.on ? yOn : yOff, x1 = x(s.s), x2 = x(s.e);
+    bands += `<rect x="${x1}" y="${s.on?yOn:T}" width="${Math.max(0.5, x2-x1)}" height="${s.on? yOff-yOn : yOff-T}" style="fill:var(${s.on?'--on':'--off'});opacity:.14"/>`;
+    d += (open ? 'L' : 'M') + x1 + ',' + y + 'L' + x2 + ',' + y;
+    open = true;
+  });
+  g += `<g clip-path="url(#plot)">${bands}<path d="${d}" fill="none" style="stroke:var(--accent)" stroke-width="2" stroke-linejoin="round"/>`;
+  if(end < endDay && end > a && end < b) g += `<line x1="${x(end)}" x2="${x(end)}" y1="${T}" y2="${H-B}" style="stroke:var(--muted)" stroke-dasharray="4 3"/><text x="${x(end)+4}" y="${T+8}">Now</text>`;
+  const pick = (document.querySelector('input[name=pwr]:checked') || {}).value || 'none';
+  const shown = [];
+  [['pwrf','--pf','Power fail'],['pwrr','--pr','Power restore']].forEach(([k,c,name]) => {
+    if(pick !== k && pick !== 'both') return;
+    PWR[k].forEach(ts => {
+      if(ts < a || ts > b) return;
+      const px = x(ts); shown.push({px, ts, name: `${name} (${k})`});
+      g += `<line x1="${px}" x2="${px}" y1="${T}" y2="${H-B}" style="stroke:var(${c})" stroke-width="1.5" stroke-dasharray="5 3"/>`;
+      g += k === 'pwrf'
+        ? `<path d="M${px-5},${T-9}L${px+5},${T-9}L${px},${T-1}Z" style="fill:var(${c})"/>`
+        : `<path d="M${px-5},${T-1}L${px+5},${T-1}L${px},${T-9}Z" style="fill:var(${c})"/>`;
+    });
+  });
+  g += `</g>`;
+
+  g += `<line id="cursor" y1="${T}" y2="${H-B}" style="stroke:var(--ink)" opacity=".5" visibility="hidden"/>`;
+  g += `<rect id="sel" y="${T}" height="${H-B-T}" width="0" style="fill:var(--accent);opacity:.18" visibility="hidden"/>`;
+  g += `<rect id="hover" x="${L}" y="${T}" width="${pw}" height="${H-B-T}" fill="transparent"/>`;
+  svg.innerHTML = g;
+
+  // toolbar state
+  const full = endDay - start, zoomed = span < full - 1;
+  $('zoomLbl').textContent = `${fmt(a)} – ${fmt(b)} (${dur(span)})${zoomed ? '' : ', full range'}`;
+  $('zReset').disabled = !zoomed; $('zOut').disabled = !zoomed;
+  $('zIn').disabled = span <= MIN_WIN; $('panL').disabled = a <= start; $('panR').disabled = b >= endDay;
+
+  // hover readout + drag-to-zoom
+  const tip = $('tip'), cur = svg.querySelector('#cursor'), sel = svg.querySelector('#sel'), hov = svg.querySelector('#hover');
+  const toPx = e => { const r = svg.getBoundingClientRect(); return Math.min(W-R, Math.max(L, (e.clientX - r.left) * W / r.width)); };
+  const toTs = px => a + (px - L) / pw * span;
+  let dragFrom = null;
+
+  hov.onpointerdown = e => { dragFrom = toPx(e); hov.setPointerCapture(e.pointerId); };
+  hov.onpointermove = e => {
+    const px = toPx(e), ts = toTs(px), r = svg.getBoundingClientRect();
+    cur.setAttribute('x1', px); cur.setAttribute('x2', px); cur.setAttribute('visibility', 'visible');
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX - box.getBoundingClientRect().left) + 'px';
+    tip.style.top = (yOn * r.height / H) + 'px';
+    if(dragFrom !== null){
+      sel.setAttribute('x', Math.min(dragFrom, px)); sel.setAttribute('width', Math.abs(px - dragFrom)); sel.setAttribute('visibility', 'visible');
+      tip.textContent = `Zoom to ${fmt(toTs(Math.min(dragFrom,px)))} – ${fmt(toTs(Math.max(dragFrom,px)))}`;
+    }else{
+      const s = segs.find(z => ts >= z.s && ts < z.e);
+      const near = shown.filter(m => Math.abs(m.px - px) <= 6);
+      tip.textContent = near.length ? near.map(m => `${m.name}: ${fmtS(m.ts)}`).join(' | ') :
+        fmt(ts) + ' – ' + (!s || s.on === null ? 'No data' : (s.on ? 'Connected' : 'Disconnected') + ' for ' + dur(s.e - s.s));
+    }
+  };
+  hov.onpointerup = e => {
+    if(dragFrom === null) return;
+    const px = toPx(e), lo = Math.min(dragFrom, px), hi = Math.max(dragFrom, px);
+    dragFrom = null; sel.setAttribute('visibility', 'hidden');
+    if(hi - lo > 6) setView(toTs(lo), toTs(hi));
+  };
+  hov.onpointerleave = () => { if(dragFrom === null){ tip.style.display = 'none'; cur.setAttribute('visibility', 'hidden'); } };
+  hov.ondblclick = () => { VIEW = null; drawState(); };
+}
+let rsz; window.addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(drawState, 150); });
+
+function csv(){
+  const rows=[['#','Disconnected','Reconnected','Duration (min)']].concat(OUTAGES.map((o,i)=>[i+1,new Date(o.s).toISOString(),new Date(o.e).toISOString(),Math.round((o.e-o.s)/6e4)]));
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}));
+  a.download=`connectivity_${$('devTitle').textContent.replace(/[^\w-]+/g,'_')}.csv`; a.click();
+}
+
+/* ---------- init ---------- */
+(function(){
+  const iso = d => new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+  const t=new Date(); $('toDate').value=iso(t); $('fromDate').value=iso(new Date(t.getTime()-6*DAY));
+  $('loginBtn').onclick=login; $('tbPass').onkeydown=e=>{ if(e.key==='Enter') login(); };
+  $('logoutBtn').onclick=logout; $('runBtn').onclick=run; $('csvBtn').onclick=csv;
+  document.querySelectorAll('input[name=pwr]').forEach(r => r.onchange = drawState);
+  $('zIn').onclick=()=>zoomBy(0.5); $('zOut').onclick=()=>zoomBy(2);
+  $('panL').onclick=()=>panBy(-0.5); $('panR').onclick=()=>panBy(0.5);
+  $('zReset').onclick=()=>{ VIEW=null; drawState(); };
+  $('projSel').onchange=searchDevices;
+  let tmr; $('devSearch').oninput=()=>{ clearTimeout(tmr); tmr=setTimeout(searchDevices,400); };
+  const p = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.slice(1));
+  TB = h.get('tb') || p.get('tb') || load('tb_url') || '';
+  TOKEN = h.get('token') || p.get('token') || load('tb_token') || '';
+  if(h.get('token') || p.get('token')){ store('tb_url',TB); store('tb_token',TOKEN); try{ history.replaceState(null,'',location.pathname); }catch(e){} }
+  if(TB) $('tbUrl').value=TB;
+  if(TB && TOKEN) afterLogin().catch(()=>logout());
+})();
+</script>
+</body>
+</html>
